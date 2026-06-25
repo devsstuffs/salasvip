@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuinKong</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Outfit:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.44.0/iconfont/tabler-icons.min.css">
+<style>
+  :root{
+    --ink:#14241f;
+    --paper:#FCFBF7;
+    --muted:#6b756f;
+    --line:#e7e3d8;
+    --teal:#0F6E56; --teal-bg:#E1F5EE; --teal-mid:#5DCAA5; --teal-dark:#04342C;
+    --amber:#854F0B; --amber-bg:#FAEEDA; --amber-mid:#EF9F27; --amber-dark:#412402;
+    --purple:#534AB7; --purple-bg:#EEEDFE; --purple-mid:#AFA9EC; --purple-dark:#26215C;
+    --coral:#993C1D; --coral-bg:#FAECE7; --coral-mid:#F0997B; --coral-dark:#4A1B0C;
+    --blue:#185FA5; --blue-bg:#E6F1FB; --blue-mid:#85B7EB; --blue-dark:#042C53;
+    --pink:#993556; --pink-bg:#FBEAF0; --pink-mid:#ED93B1;
+    --green:#3B6D11; --green-bg:#EAF3DE;
+    --red:#A32D2D; --red-bg:#FCEBEB;
+    --radius-card:16px; --radius-ctrl:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:'Outfit',sans-serif;-webkit-font-smoothing:antialiased}
+  body{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;padding-bottom:74px}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;font-weight:600;margin:0}
+  .mono{font-family:'Space Mono',monospace}
+  button{font-family:'Outfit',sans-serif;cursor:pointer}
+  a{color:inherit;text-decoration:none}
+  #app{flex:1;padding:0 16px 24px}
+  /* topbar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px}
+  .brand{display:flex;align-items:center;gap:8px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;letter-spacing:-0.3px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--teal)}
+  .iconbtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  /* generic card */
+  .card{background:#fff;border:1px solid var(--line);border-radius:var(--radius-card);padding:14px}
+  .card + .card{margin-top:12px}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;border-radius:20px;padding:3px 9px}
+  .btn{border:none;border-radius:var(--radius-ctrl);padding:9px 16px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;justify-content:center}
+  .btn-primary{background:var(--teal);color:#fff}
+  .btn-secondary{background:#fff;border:1px solid var(--line);color:var(--ink)}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .btn-block{width:100%}
+  .btn-danger{background:var(--red);color:#fff}
+  input,select{font-family:'Outfit',sans-serif;border:1px solid var(--line);border-radius:var(--radius-ctrl);padding:9px 11px;font-size:14px;background:#fff;color:var(--ink);width:100%}
+  input.num{font-family:'Space Mono',monospace;text-align:center}
+  label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
+  .field{margin-bottom:12px}
+  /* liga hero bands */
+  .liga-band{border-radius:0 0 22px 22px;padding:16px 16px 22px;margin:0 -16px 0;color:#fff}
+  .liga-band.bigtitle{font-size:36px}
+  .liga-pot-label{font-size:12px;opacity:.85;margin:0 0 2px}
+  .liga-pot{font-size:38px;font-weight:500;margin:0;font-family:'Space Mono',monospace;color:#fff}
+  .section-title{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px}
+  .row{display:flex;align-items:center;justify-content:space-between}
+  .avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#fff;flex-shrink:0}
+  .empty{text-align:center;color:var(--muted);padding:30px 10px;font-size:13px}
+  details summary{cursor:pointer;list-style:none}
+  details summary::-webkit-details-marker{display:none}
+  /* bottom nav */
+  .bottomnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 0 calc(8px + env(safe-area-inset-bottom));z-index:50}
+  .navitem{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font-size:10px;background:none;border:none;padding:4px 10px}
+  .navitem.active{color:var(--teal)}
+  .navitem i{font-size:20px}
+  /* modal */
+  .modal-overlay{position:fixed;inset:0;background:rgba(20,36,31,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+  .modal-box{background:#fff;border-radius:18px;padding:20px;max-width:340px;width:100%}
+  /* toast */
+  .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:30px;font-size:13px;z-index:200}
+  .badge-count{background:var(--teal);color:#fff;border-radius:20px;font-size:10px;padding:1px 6px;margin-left:4px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><span class="dot"></span>QuinKong</div>
+  <button class="iconbtn" id="btn-profile" aria-label="Perfil"><i class="ti ti-user"></i></button>
+</div>
+<div id="app"></div>
+<nav class="bottomnav">
+  <button class="navitem" data-route="#/salas"><i class="ti ti-home"></i><span>salas</span></button>
+  <button class="navitem" data-route="#/ranking"><i class="ti ti-trophy"></i><span>ranking</span></button>
+  <button class="navitem" data-route="#/historial"><i class="ti ti-clock"></i><span>historial</span></button>
+  <button class="navitem" data-route="#/wallet"><i class="ti ti-wallet"></i><span>wallet</span></button>
+</nav>
+<script>
+"use strict";
+
+/* =========================================================
+   QuinKong — MVP de quiniela por sala/día/liga
+   Dirección visual: ilustrado deportivo juguetón
+   ========================================================= */
+
+const LIGA_COLORS = {
+  'Mundial FIFA 2026': { band:'#0F6E56', bg:'var(--teal-bg)', mid:'var(--teal-mid)', dark:'var(--teal-dark)', text:'var(--teal)', icon:'ti-ball-football' },
+  'Liga MX':            { band:'#854F0B', bg:'var(--amber-bg)', mid:'var(--amber-mid)', dark:'var(--amber-dark)', text:'var(--amber)', icon:'ti-ball-football' },
+  'NBA':                { band:'#534AB7', bg:'var(--purple-bg)', mid:'var(--purple-mid)', dark:'var(--purple-dark)', text:'var(--purple)', icon:'ti-basketball' },
+  'NFL':                { band:'#993C1D', bg:'var(--coral-bg)', mid:'var(--coral-mid)', dark:'var(--coral-dark)', text:'var(--coral)', icon:'ti-football-american' },
+  'MLB':                { band:'#185FA5', bg:'var(--blue-bg)', mid:'var(--blue-mid)', dark:'var(--blue-dark)', text:'var(--blue)', icon:'ti-baseball' },
+};
+
+const AVATAR_COLORS = ['#534AB7','#0F6E56','#993C1D','#185FA5','#993556','#3B6D11','#854F0B','#A32D2D'];
+function avatarColor(seedStr){
+  let h = 0; for (let i=0;i<seedStr.length;i++) h = (h*31 + seedStr.charCodeAt(i)) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[Math.abs(h)];
+}
+function initials(nombre){ return nombre.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase(); }
+function money(n){ return '$' + Math.round(n).toLocaleString('es-MX'); }
+function fmtFecha(ts){ const d=new Date(ts); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
+
+/* ---------------------------------------------------------
+   MOTOR DE CÁLCULO — funciones puras, sin DOM.
+   (Idéntico al validado por separado con Node antes de construir la UI.)
+   --------------------------------------------------------- */
+function ganadorDe(m){ if(m.local>m.visitante) return 'local'; if(m.visitante>m.local) return 'visitante'; return 'empate'; }
+function puntosDe(pronostico, resultado){
+  if (pronostico.local===resultado.local && pronostico.visitante===resultado.visitante) return 3;
+  if (ganadorDe(pronostico)===ganadorDe(resultado)) return 1;
+  return 0;
+}
+function distanciaDe(pronostico, resultado){ return Math.abs(pronostico.local-resultado.local) + Math.abs(pronostico.visitante-resultado.visitante); }
+function calcularBolsa(participantes, rolloverAnterior){
+  const totalRecaudado = participantes * 50;
+  const comisionCasa = totalRecaudado * 0.16;
+  const bolsaPremiosNeta = totalRecaudado - comisionCasa;
+  const bolsaTotalAEntregar = bolsaPremiosNeta + (rolloverAnterior||0);
+  return { participantes, totalRecaudado, comisionCasa, bolsaPremiosNeta, bolsaTotalAEntregar };
+}
+
+function statsDeSala(salaId){
+  const inscritos = DB.inscripciones.filter(i=>i.salaId===salaId);
+  const partidos = DB.partidos.filter(p=>p.salaId===salaId);
+  return inscritos.map(ins=>{
+    const pronos = DB.pronosticos.filter(pr=>pr.salaId===salaId && pr.usuarioId===ins.usuarioId);
+    let puntos=0, exactos=0, dist=0;
+    const detalle = [];
+    pronos.forEach(pr=>{
+      const partido = partidos.find(p=>p.id===pr.partidoId);
+      if(!partido || partido.estado!=='finalizado') return;
+      const pts = puntosDe(pr.valores, partido.resultadoFinal);
+      puntos += pts; if(pts===3) exactos++;
+      dist += distanciaDe(pr.valores, partido.resultadoFinal);
+      detalle.push({partidoId:partido.id, pts});
+    });
+    const usuario = DB.usuarios.find(u=>u.id===ins.usuarioId);
+    return { usuarioId: ins.usuarioId, nombre: usuario? usuario.nombre : '???', puntos, exactos, dist, detalle };
+  }).sort((a,b)=> b.puntos-a.puntos || b.exactos-a.exactos || a.dist-b.dist);
+}
+
+function resolverDiaSiCorresponde(salaId){
+  const sala = DB.salas.find(s=>s.id===salaId);
+  const partidos = DB.partidos.filter(p=>p.salaId===salaId);
+  if (partidos.length===0 || partidos.some(p=>p.estado!=='finalizado')) return;
+
+  const participantes = DB.inscripciones.filter(i=>i.salaId===salaId).length;
+  const bolsa = calcularBolsa(participantes, sala.rolloverAnterior||0);
+  DB.comisiones.push({ id: uid('com'), salaId, monto: bolsa.comisionCasa, fecha: Date.now() });
+
+  const stats = statsDeSala(salaId);
+  const maxPuntos = stats.length ? Math.max(...stats.map(s=>s.puntos)) : 0;
+
+  if (maxPuntos === 0){
+    sala.estado = 'sin_ganador';
+    sala.resultadoDia = { ganadores: [], nivel: 'sin_ganador', criterio: null, maxPuntos: 0 };
+    sala.fechaResolucion = Date.now();
+    DB.rolloverPools[sala.liga] = (DB.rolloverPools[sala.liga]||0) + bolsa.bolsaTotalAEntregar;
+    persist(); return;
+  }
+
+  let candidatos = stats.filter(s=>s.puntos===maxPuntos);
+  let criterio = 'puntos';
+  if (candidatos.length>1){
+    const maxEx = Math.max(...candidatos.map(c=>c.exactos));
+    if (candidatos.some(c=>c.exactos!==maxEx) || candidatos.length>1){
+      const filtrados = candidatos.filter(c=>c.exactos===maxEx);
+      if (filtrados.length < candidatos.length) criterio='exactos';
+      candidatos = filtrados;
+    }
+  }
+  if (candidatos.length>1){
+    const minDist = Math.min(...candidatos.map(c=>c.dist));
+    const filtrados = candidatos.filter(c=>c.dist===minDist);
+    if (filtrados.length < candidatos.length) criterio='distancia';
+    candidatos = filtrados;
+  }
+  if (candidatos.length>1) criterio='reparto';
+
+  const monto = bolsa.bolsaTotalAEntregar / candidatos.length;
+  candidatos.forEach(c=>{
+    DB.transacciones.push({ id: uid('tx'), usuarioId: c.usuarioId, tipo:'premio', monto, fecha: Date.now(), salaId });
+    const u = DB.usuarios.find(u=>u.id===c.usuarioId); if(u) u.saldo += monto;
+  });
+  sala.estado = 'finalizada_pagada';
+  sala.resultadoDia = { ganadores: candidatos.map(c=>c.usuarioId), nivel:'pagada', criterio, maxPuntos };
+  sala.fechaResolucion = Date.now();
+  DB.rolloverPools[sala.liga] = 0;
+  persist();
+}
+
+function resolverPartido(partidoId, resultadoFinal){
+  const partido = DB.partidos.find(p=>p.id===partidoId);
+  if (!partido) return;
+  partido.resultadoFinal = resultadoFinal;
+  partido.estado = 'finalizado';
+  persist();
+  resolverDiaSiCorresponde(partido.salaId);
+}
+
+let _uidc = 0;
+function uid(prefix){ _uidc++; return prefix + '_' + Date.now().toString(36) + _uidc; }
+
+/* ---------------------------------------------------------
+   DATOS DE PRUEBA (sección 8) — equipos reales, nombres mexicanos.
+   Las salas históricas se resuelven con el motor real al iniciar,
+   no con números inventados a mano.
+   --------------------------------------------------------- */
+const HOY = Date.now();
+const H = (horas)=> HOY + horas*3600000;
+const DIA = (n)=> n*86400000;
+
+function seedData(){
+  const usuarios = [
+    { id:'u1', nombre:'Hugo Treviño', usuario:'hugo', saldo:500, fechaNacimiento:'1992-04-12', rol:'jugador' },
+    { id:'u2', nombre:'Eduardo Ramírez', usuario:'lalo', saldo:500, fechaNacimiento:'1990-01-20', rol:'jugador' },
+    { id:'u3', nombre:'Paola Gómez', usuario:'pao', saldo:500, fechaNacimiento:'1995-07-03', rol:'jugador' },
+    { id:'u4', nombre:'Itzel Vargas', usuario:'itzel', saldo:500, fechaNacimiento:'1998-11-29', rol:'jugador' },
+    { id:'u5', nombre:'Marco Solís', usuario:'marco', saldo:500, fechaNacimiento:'1989-03-15', rol:'jugador' },
+    { id:'u6', nombre:'Karla Núñez', usuario:'karla', saldo:500, fechaNacimiento:'2001-09-08', rol:'jugador' },
+    { id:'u7', nombre:'Jorge Aguilar', usuario:'jorge', saldo:500, fechaNacimiento:'1994-05-22', rol:'jugador' },
+    { id:'u8', nombre:'Daniela Ortiz', usuario:'dani', saldo:500, fechaNacimiento:'1996-12-02', rol:'jugador' },
+    { id:'admin', nombre:'Administrador QuinKong', usuario:'admin', saldo:0, fechaNacimiento:'1985-01-01', rol:'admin' },
+  ];
+
+  const salas = []; const partidos = []; const pronosticos = []; const inscripciones = []; const transacciones = []; const comisiones = [];
+  function addSala({liga, estado, rolloverAnterior, horaPartidosBase, partidosDef, inscritosIds, pronosDef}){
+    const salaId = uid('sala');
+    salas.push({ id:salaId, liga, cuotaEntrada:50, estado, rolloverAnterior: rolloverAnterior||0, resultadoDia:null, fechaResolucion:null });
+    const partidoIds = [];
+    partidosDef.forEach(pd=>{
+      const partidoId = uid('partido');
+      partidoIds.push(partidoId);
+      partidos.push({ id:partidoId, salaId, equipoLocal:pd.local, equipoVisitante:pd.visitante, horaInicio:pd.horaInicio, estado:pd.estado||'pendiente', resultadoFinal:pd.resultadoFinal||null, marcadorEnVivo:pd.marcadorEnVivo||null });
+    });
+    inscritosIds.forEach(uidUser=>{ inscripciones.push({ id:uid('insc'), salaId, usuarioId:uidUser, fecha:Date.now() });
+      transacciones.push({ id:uid('tx'), usuarioId:uidUser, tipo:'entrada', monto:50, fecha:Date.now(), salaId });
+      const usr = usuarios.find(u=>u.id===uidUser); if (usr) usr.saldo -= 50;
+    });
+    (pronosDef||[]).forEach(pr=>{
+      pronosticos.push({ id:uid('prono'), salaId, partidoId:partidoIds[pr.partidoIdx], usuarioId:pr.usuarioId, valores:pr.valores, fecha:Date.now()-DIA(0.01) });
+    });
+    return { salaId, partidoIds };
+  }
+
+  /* ---- HOY: salas activas ---- */
+  addSala({
+    liga:'Mundial FIFA 2026', estado:'abierta', horaPartidosBase:H(1),
+    partidosDef:[
+      { local:'México', visitante:'Polonia', horaInicio:H(-0.7), estado:'pendiente', marcadorEnVivo:{local:1,visitante:0} },
+      { local:'Argentina', visitante:'Francia', horaInicio:H(1.5) },
+      { local:'Brasil', visitante:'España', horaInicio:H(2.5) },
+    ],
+    inscritosIds:['u1','u2','u3','u4'],
+    pronosDef:[
+      { usuarioId:'u2', partidoIdx:0, valores:{local:2,visitante:1} },
+      { usuarioId:'u3', partidoIdx:0, valores:{local:1,visitante:0} },
+      { usuarioId:'u4', partidoIdx:0, valores:{local:3,visitante:0} },
+      { usuarioId:'u1', partidoIdx:0, valores:{local:2,visitante:0} },
+    ]
+  });
+
+  addSala({
+    liga:'Liga MX', estado:'abierta',
+    partidosDef:[
+      { local:'Club América', visitante:'Cruz Azul', horaInicio:H(3) },
+      { local:'Monterrey', visitante:'Tigres UANL', horaInicio:H(3.5) },
+    ],
+    inscritosIds:['u1','u5','u6'],
+    pronosDef:[]
+  });
+
+  addSala({
+    liga:'NBA', estado:'abierta',
+    partidosDef:[
+      { local:'Lakers', visitante:'Celtics', horaInicio:H(5) },
+      { local:'Warriors', visitante:'Heat', horaInicio:H(5.5) },
+    ],
+    inscritosIds:['u1','u7'],
+    pronosDef:[]
+  });
+
+  addSala({
+    liga:'MLB', estado:'abierta',
+    partidosDef:[
+      { local:'Yankees', visitante:'Dodgers', horaInicio:H(4) },
+      { local:'Astros', visitante:'Braves', horaInicio:H(4.5) },
+    ],
+    inscritosIds:['u1','u8'],
+    pronosDef:[]
+  });
+
+  /* ---- HISTORIAL: escenario E (rollover) — NBA sala H1, día -3, nadie acierta ---- */
+  const h1 = addSala({
+    liga:'NBA', estado:'abierta', horaPartidosBase:HOY-DIA(3),
+    partidosDef:[
+      { local:'Lakers', visitante:'Celtics', horaInicio:HOY-DIA(3), estado:'finalizado', resultadoFinal:{local:100,visitante:95} },
+      { local:'Warriors', visitante:'Heat', horaInicio:HOY-DIA(3), estado:'finalizado', resultadoFinal:{local:88,visitante:90} },
+      { local:'Suns', visitante:'Mavericks', horaInicio:HOY-DIA(3), estado:'finalizado', resultadoFinal:{local:110,visitante:108} },
+    ],
+    inscritosIds:['u5','u6','u7','u8'],
+    pronosDef:[
+      { usuarioId:'u5', partidoIdx:0, valores:{local:90,visitante:100} }, { usuarioId:'u5', partidoIdx:1, valores:{local:95,visitante:80} }, { usuarioId:'u5', partidoIdx:2, valores:{local:90,visitante:120} },
+      { usuarioId:'u6', partidoIdx:0, valores:{local:80,visitante:99} }, { usuarioId:'u6', partidoIdx:1, valores:{local:99,visitante:85} }, { usuarioId:'u6', partidoIdx:2, valores:{local:85,visitante:130} },
+      { usuarioId:'u7', partidoIdx:0, valores:{local:70,visitante:101} },
+      { usuarioId:'u8', partidoIdx:1, valores:{local:70,visitante:65} },
+    ]
+  });
+
+  /* ---- HISTORIAL: escenario A + E — NBA sala H2, día -2, recibe el rollover de H1 ---- */
+  const h2 = addSala({
+    liga:'NBA', estado:'abierta', rolloverAnterior:0, horaPartidosBase:HOY-DIA(2),
+    partidosDef:[ { local:'Bulls', visitante:'Knicks', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:1,visitante:0} } ],
+    inscritosIds:['u1','u3'],
+    pronosDef:[
+      { usuarioId:'u1', partidoIdx:0, valores:{local:1,visitante:0} },
+      { usuarioId:'u3', partidoIdx:0, valores:{local:0,visitante:1} },
+    ]
+  });
+
+  /* ---- HISTORIAL: escenario B — Liga MX sala H3, día -2, empate resuelto por exactos ---- */
+  const h3 = addSala({
+    liga:'Liga MX', estado:'abierta', horaPartidosBase:HOY-DIA(2),
+    partidosDef:[
+      { local:'Club América', visitante:'Cruz Azul', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:2,visitante:0} },
+      { local:'Monterrey', visitante:'Tigres UANL', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:1,visitante:0} },
+      { local:'Toluca', visitante:'León', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:0,visitante:1} },
+      { local:'Santos Laguna', visitante:'Pachuca', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:1,visitante:1} },
+    ],
+    inscritosIds:['u4','u7','u6'],
+    pronosDef:[
+      { usuarioId:'u4', partidoIdx:0, valores:{local:2,visitante:0} }, { usuarioId:'u4', partidoIdx:1, valores:{local:1,visitante:0} }, { usuarioId:'u4', partidoIdx:2, valores:{local:2,visitante:0} }, { usuarioId:'u4', partidoIdx:3, valores:{local:0,visitante:1} },
+      { usuarioId:'u7', partidoIdx:0, valores:{local:3,visitante:1} }, { usuarioId:'u7', partidoIdx:1, valores:{local:2,visitante:0} }, { usuarioId:'u7', partidoIdx:2, valores:{local:0,visitante:2} }, { usuarioId:'u7', partidoIdx:3, valores:{local:1,visitante:1} },
+      { usuarioId:'u6', partidoIdx:0, valores:{local:0,visitante:1} }, { usuarioId:'u6', partidoIdx:1, valores:{local:0,visitante:1} }, { usuarioId:'u6', partidoIdx:2, valores:{local:1,visitante:0} }, { usuarioId:'u6', partidoIdx:3, valores:{local:0,visitante:2} },
+    ]
+  });
+
+  /* ---- HISTORIAL: escenario C — Mundial sala H4, día -1, empate resuelto por distancia ---- */
+  const h4 = addSala({
+    liga:'Mundial FIFA 2026', estado:'abierta', horaPartidosBase:HOY-DIA(1),
+    partidosDef:[
+      { local:'México', visitante:'Canadá', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:1,visitante:0} },
+      { local:'Argentina', visitante:'Brasil', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:2,visitante:1} },
+      { local:'España', visitante:'Alemania', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:0,visitante:0} },
+    ],
+    inscritosIds:['u8','u5','u3'],
+    pronosDef:[
+      { usuarioId:'u8', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u8', partidoIdx:1, valores:{local:3,visitante:1} }, { usuarioId:'u8', partidoIdx:2, valores:{local:1,visitante:1} },
+      { usuarioId:'u5', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u5', partidoIdx:1, valores:{local:4,visitante:2} }, { usuarioId:'u5', partidoIdx:2, valores:{local:2,visitante:2} },
+      { usuarioId:'u3', partidoIdx:0, valores:{local:0,visitante:2} }, { usuarioId:'u3', partidoIdx:1, valores:{local:0,visitante:1} }, { usuarioId:'u3', partidoIdx:2, valores:{local:0,visitante:1} },
+    ]
+  });
+
+  /* ---- HISTORIAL: escenario D — NFL sala H5, día -1, empate total → reparto igualitario ---- */
+  const h5 = addSala({
+    liga:'NFL', estado:'abierta', horaPartidosBase:HOY-DIA(1),
+    partidosDef:[
+      { local:'Dallas Cowboys', visitante:'Philadelphia Eagles', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:2,visitante:1} },
+      { local:'Kansas City Chiefs', visitante:'Buffalo Bills', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:0,visitante:0} },
+    ],
+    inscritosIds:['u2','u7','u6'],
+    pronosDef:[
+      { usuarioId:'u2', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u2', partidoIdx:1, valores:{local:1,visitante:0} },
+      { usuarioId:'u7', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u7', partidoIdx:1, valores:{local:1,visitante:0} },
+      { usuarioId:'u6', partidoIdx:0, valores:{local:0,visitante:2} }, { usuarioId:'u6', partidoIdx:1, valores:{local:0,visitante:1} },
+    ]
+  });
+
+  return { usuarios, salas, partidos, pronosticos, inscripciones, transacciones, comisiones,
+           rolloverPools:{}, _historialSeed:{h1:h1.salaId,h2:h2.salaId,h3:h3.salaId,h4:h4.salaId,h5:h5.salaId},
+           limiteDeposito:2000, autoexcluido:false, sesionUsuarioId:'u1' };
+}
+
+/* Resuelve el historial de prueba en orden cronológico con el motor real.
+   H2 (NBA) debe heredar el rollover que generó H1 antes de resolverse — por
+   eso no se resuelve con un simple forEach, se sincroniza explícitamente. */
+function resolverHistorialSeed(){
+  const ids = DB._historialSeed;
+  resolverDiaSiCorresponde(ids.h1);
+  const salaH2 = DB.salas.find(s=>s.id===ids.h2);
+  salaH2.rolloverAnterior = DB.rolloverPools['NBA'] || 0;
+  resolverDiaSiCorresponde(ids.h2);
+  resolverDiaSiCorresponde(ids.h3);
+  resolverDiaSiCorresponde(ids.h4);
+  resolverDiaSiCorresponde(ids.h5);
+}
+
+/* ---------------------------------------------------------
+   ESTADO GLOBAL + PERSISTENCIA (artifact storage)
+   --------------------------------------------------------- */
+let DB = null;
+let _saving = false;
+function persist(){
+  if (!DB) return;
+  _saving = true;
+  window.storage.set('quinkong_db', JSON.stringify(DB), false)
+    .catch(err=> console.error('No se pudo guardar el estado:', err))
+    .finally(()=>{ _saving=false; });
+}
+
+async function cargarOInicializar(){
+  try {
+    const res = await window.storage.get('quinkong_db', false);
+    if (res && res.value) { DB = JSON.parse(res.value); return; }
+  } catch(e) { /* todavía no hay datos guardados — sembramos */ }
+  DB = seedData();
+  resolverHistorialSeed();
+  persist();
+}
+
+function resetDemo(){
+  DB = seedData();
+  resolverHistorialSeed();
+  persist();
+  toast('Datos de demo reiniciados');
+  render();
+}
+
+function usuarioActual(){ return DB.usuarios.find(u=>u.id===DB.sesionUsuarioId) || null; }
+function esAdmin(){ const u=usuarioActual(); return u && u.rol==='admin'; }
+function edadDeFecha(fechaStr){
+  const hoy = new Date(); const nac = new Date(fechaStr);
+  let edad = hoy.getFullYear()-nac.getFullYear();
+  const m = hoy.getMonth()-nac.getMonth();
+  if (m<0 || (m===0 && hoy.getDate()<nac.getDate())) edad--;
+  return edad;
+}
+
+/* sincroniza pendiente -> en_juego según la hora real, y abierta -> en_curso de la sala */
+function actualizarEstadosPorTiempo(){
+  const ahora = Date.now();
+  let cambios = false;
+  DB.partidos.forEach(p=>{
+    if (p.estado==='pendiente' && p.horaInicio<=ahora){ p.estado='en_juego'; if(!p.marcadorEnVivo) p.marcadorEnVivo={local:0,visitante:0}; cambios=true; }
+  });
+  DB.salas.forEach(s=>{
+    if (s.estado==='abierta'){
+      const partidos = DB.partidos.filter(p=>p.salaId===s.id);
+      if (partidos.some(p=>p.estado!=='pendiente')) { s.estado='en_curso'; cambios=true; }
+    }
+  });
+  if (cambios) persist();
+}
+
+function toast(msg){
+  const old = document.querySelector('.toast'); if(old) old.remove();
+  const el = document.createElement('div'); el.className='toast'; el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=> el.remove(), 2400);
+}
+
+/* ---------------------------------------------------------
+   MODAL — sin stopPropagation; el fondo se cierra comparando e.target
+   --------------------------------------------------------- */
+function showModal(html){
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.id='modal-overlay';
+  overlay.innerHTML = '<div class="modal-box">'+html+'</div>';
+  document.body.appendChild(overlay);
+}
+function closeModal(){ const el=document.getElementById('modal-overlay'); if(el) el.remove(); }
+
+/* ---------------------------------------------------------
+   DELEGACIÓN DE EVENTOS ÚNICA EN document
+   --------------------------------------------------------- */
+document.addEventListener('click', function(e){
+  const overlay = document.getElementById('modal-overlay');
+  if (overlay && e.target === overlay) { closeModal(); return; }
+
+  const navBtn = e.target.closest('.navitem');
+  if (navBtn){ location.hash = navBtn.dataset.route; return; }
+
+  if (e.target.closest('#btn-profile')){ location.hash = '#/perfil'; return; }
+
+  const actionEl = e.target.closest('[data-action]');
+  if (actionEl){ handleAction(actionEl.dataset.action, actionEl); }
+});
+
+document.addEventListener('change', function(e){
+  if (e.target.matches('[data-onchange]')) { handleChange(e.target.dataset.onchange, e.target); }
+});
+
+/* ---------------------------------------------------------
+   ROUTER — render directo, nunca navigate(hashActual)
+   --------------------------------------------------------- */
+window.addEventListener('hashchange', render);
+
+function render(){
+  actualizarEstadosPorTiempo();
+  const hash = location.hash || '#/salas';
+  const app = document.getElementById('app');
+  const parts = hash.replace('#/','').split('/');
+  const view = parts[0] || 'salas';
+  document.querySelectorAll('.navitem').forEach(b=> b.classList.toggle('active', b.dataset.route==='#/'+view));
+
+  let html = '';
+  if (view==='salas') html = renderSalas();
+  else if (view==='sala') html = renderSala(parts[1]);
+  else if (view==='ranking') html = renderRanking();
+  else if (view==='historial') html = renderHistorial();
+  else if (view==='wallet') html = renderWallet();
+  else if (view==='perfil') html = renderPerfil();
+  else if (view==='login') html = renderLogin();
+  else if (view==='terminos') html = renderEstatico('Términos y condiciones', TERMINOS_TXT);
+  else if (view==='privacidad') html = renderEstatico('Aviso de privacidad', PRIVACIDAD_TXT);
+  else if (view==='admin') html = renderAdmin();
+  else html = '<div class="empty">Pantalla no encontrada.</div>';
+
+  app.innerHTML = html;
+}
+
+/* ---------------------------------------------------------
+   VISTA: listado de salas activas hoy, agrupadas por liga
+   --------------------------------------------------------- */
+function formatCountdown(ms){
+  if (ms<=0) return 'cerrada';
+  const h = Math.floor(ms/3600000), m = Math.floor((ms%3600000)/60000);
+  return h>0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function renderSalas(){
+  const activas = DB.salas.filter(s=> s.estado==='abierta' || s.estado==='en_curso');
+  if (activas.length===0) return '<div class="empty">No hay salas activas hoy. Vuelve más tarde.</div>';
+
+  const porLiga = {};
+  activas.forEach(s=>{ (porLiga[s.liga] = porLiga[s.liga]||[]).push(s); });
+
+  let html = '';
+  Object.keys(porLiga).forEach(liga=>{
+    const col = LIGA_COLORS[liga] || LIGA_COLORS['Mundial FIFA 2026'];
+    html += `<div class="section-title">${liga}</div>`;
+    porLiga[liga].forEach(s=>{
+      const partidos = DB.partidos.filter(p=>p.salaId===s.id).sort((a,b)=>a.horaInicio-b.horaInicio);
+      const primerInicio = partidos.length? Math.min(...partidos.map(p=>p.horaInicio)) : 0;
+      const participantes = DB.inscripciones.filter(i=>i.salaId===s.id).length;
+      const bolsa = calcularBolsa(participantes, s.rolloverAnterior);
+      const inscrito = DB.inscripciones.some(i=>i.salaId===s.id && i.usuarioId===DB.sesionUsuarioId);
+      const cuentaAtras = s.estado==='abierta' ? formatCountdown(primerInicio - Date.now()) : 'en curso';
+      html += `
+      <div class="card" data-action="ver_sala" data-sala="${s.id}" style="cursor:pointer">
+        <div class="row">
+          <span class="tag" style="background:${col.bg};color:${col.text}"><i class="ti ${col.icon}" aria-hidden="true"></i>${s.estado==='abierta'?'abierta':'en curso'}</span>
+          <span class="small muted">${s.estado==='abierta' ? 'cierra en '+cuentaAtras : 'partidos en juego'}</span>
+        </div>
+        <p class="mono" style="font-size:28px;margin:10px 0 2px;color:${col.text}">${money(bolsa.bolsaTotalAEntregar)}</p>
+        <p class="small muted" style="margin:0">${participantes} jugadores · ${partidos.length} partidos${s.rolloverAnterior?` · +${money(s.rolloverAnterior)} acumulado`:''}</p>
+        ${inscrito ? '<p class="small" style="color:'+col.text+';margin:8px 0 0">ya estás inscrito</p>' : ''}
+      </div>`;
+    });
+  });
+  return html;
+}
+
+/* ---------------------------------------------------------
+   VISTA: una sala — bolsa, partidos, pronósticos, posiciones
+   --------------------------------------------------------- */
+function renderSala(salaId){
+  const sala = DB.salas.find(s=>s.id===salaId);
+  if (!sala) return '<div class="empty">Esa sala no existe.</div>';
+  const col = LIGA_COLORS[sala.liga] || LIGA_COLORS['Mundial FIFA 2026'];
+  const partidos = DB.partidos.filter(p=>p.salaId===salaId).sort((a,b)=>a.horaInicio-b.horaInicio);
+  const participantes = DB.inscripciones.filter(i=>i.salaId===salaId).length;
+  const bolsa = calcularBolsa(participantes, sala.rolloverAnterior);
+  const inscrito = DB.inscripciones.some(i=>i.salaId===salaId && i.usuarioId===DB.sesionUsuarioId);
+  const cerrada = sala.estado==='finalizada_pagada' || sala.estado==='sin_ganador';
+  const stats = statsDeSala(salaId);
+
+  let html = `<div class="liga-band" style="background:${col.band}">
+    <div class="row"><span class="small" style="opacity:.85">${sala.liga} · ${cerrada? 'cerrada' : (sala.estado==='abierta'?'abierta':'en curso')}</span>
+    <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" data-action="reportar"><i class="ti ti-flag-3" aria-hidden="true"></i>reportar</button></div>
+    <p class="liga-pot-label">fondo de premios</p>
+    <p class="liga-pot">${money(bolsa.bolsaTotalAEntregar)}</p>
+    <p class="small" style="opacity:.85;margin:6px 0 0">${participantes} jugadores inscritos${sala.rolloverAnterior?` · +${money(sala.rolloverAnterior)} de jornadas anteriores`:''}</p>
+  </div>`;
+
+  html += `<details class="card" style="margin-top:14px">
+    <summary class="small" style="color:${col.text}">ver desglose del pozo</summary>
+    <div class="small muted" style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+      <div class="row"><span>Recaudado (${participantes} × $50)</span><span class="mono">${money(bolsa.totalRecaudado)}</span></div>
+      <div class="row"><span>Comisión casa (16%)</span><span class="mono">-${money(bolsa.comisionCasa)}</span></div>
+      <div class="row"><span>Fondo neto</span><span class="mono">${money(bolsa.bolsaPremiosNeta)}</span></div>
+      ${sala.rolloverAnterior?`<div class="row"><span>Acumulado jornadas anteriores</span><span class="mono">+${money(sala.rolloverAnterior)}</span></div>`:''}
+      <div class="row" style="border-top:1px solid var(--line);padding-top:4px;margin-top:2px"><strong>Total a entregar</strong><strong class="mono">${money(bolsa.bolsaTotalAEntregar)}</strong></div>
+    </div>
+  </details>`;
+
+  if (!inscrito && sala.estado==='abierta'){
+    html += `<button class="btn btn-primary btn-block" style="margin-top:14px" data-action="unirse_sala" data-sala="${sala.id}"><i class="ti ti-ticket" aria-hidden="true"></i>unirme por $50</button>`;
+  } else if (!inscrito){
+    html += `<div class="card" style="margin-top:14px"><p class="small muted" style="margin:0">Esta sala ya cerró inscripciones.</p></div>`;
+  }
+
+  if (cerrada){
+    html += renderResultadoSala(sala, stats, bolsa, col);
+  }
+
+  html += `<div class="section-title">partidos del día</div>`;
+  partidos.forEach(p=> html += renderPartidoCard(sala, p, inscrito, col));
+
+  if (inscrito || stats.length){
+    html += `<div class="section-title">posiciones en vivo</div><div class="card">`;
+    if (stats.length===0){ html += `<p class="small muted" style="margin:0">Aún nadie tiene puntos — se actualiza al resolverse cada partido.</p>`; }
+    stats.forEach((s,i)=>{
+      const yo = s.usuarioId===DB.sesionUsuarioId;
+      html += `<div class="row" style="padding:6px 0;${i>0?'border-top:1px solid var(--line)':''}">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="small muted mono" style="width:16px">${i+1}</span>
+          <div class="avatar" style="background:${avatarColor(s.nombre)}">${initials(s.nombre)}</div>
+          <span class="small" style="${yo?'font-weight:600':''}">${s.nombre}${yo?' (tú)':''}</span>
+        </div>
+        <span class="mono small">${s.puntos} pts</span>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<details class="card" style="margin-top:14px">
+    <summary class="small" style="color:${col.text}">¿cómo se calcula el ganador?</summary>
+    <div class="small muted" style="margin-top:8px;line-height:1.6">
+      Por partido: <strong>3 puntos</strong> si aciertas el marcador exacto, <strong>1 punto</strong> si aciertas quién gana (o el empate) sin el marcador exacto, <strong>0</strong> si fallas hasta el ganador.<br><br>
+      Gana quien acumule más puntos en el día. Si hay empate, se resuelve en cascada: 1) más marcadores exactos, 2) menor diferencia acumulada de marcador, 3) si sigue empatado, se reparte la bolsa en partes iguales.<br><br>
+      Si nadie suma un solo punto en el día, la bolsa no se reparte: se acumula para la siguiente sala de esta misma liga.
+    </div>
+  </details>`;
+
+  return html;
+}
+
+function renderResultadoSala(sala, stats, bolsa, col){
+  if (sala.estado==='sin_ganador'){
+    return `<div class="card" style="margin-top:14px;background:${col.bg};border-color:transparent">
+      <p class="small" style="margin:0;color:${col.text}"><strong>sin ganador esta jornada.</strong> Nadie acertó ni el resultado de un solo partido. ${money(bolsa.bolsaTotalAEntregar)} se acumulan a la siguiente sala de ${sala.liga}.</p>
+    </div>`;
+  }
+  const ganadores = sala.resultadoDia.ganadores.map(uid=> DB.usuarios.find(u=>u.id===uid));
+  const criterioTxt = { puntos:'más puntos en el día', exactos:'desempate por marcadores exactos', distancia:'desempate por cercanía de marcador', reparto:'empate total — reparto igualitario' }[sala.resultadoDia.criterio] || '';
+  const monto = bolsa.bolsaTotalAEntregar / ganadores.length;
+  return `<div class="card" style="margin-top:14px;background:${col.bg};border-color:transparent">
+    <p class="small muted" style="margin:0 0 6px">${criterioTxt}</p>
+    ${ganadores.map(g=>`<div class="row" style="padding:4px 0"><div style="display:flex;align-items:center;gap:8px"><div class="avatar" style="background:${avatarColor(g.nombre)}">${initials(g.nombre)}</div><strong class="small">${g.nombre}</strong></div><strong class="mono small" style="color:${col.text}">${money(monto)}</strong></div>`).join('')}
+  </div>`;
+}
+
+function renderPartidoCard(sala, p, inscrito, col){
+  const estadoTag = { pendiente:['programado','muted'], en_juego:['en vivo','danger'], finalizado:['finalizado','muted'] }[p.estado];
+  const horaTxt = p.estado==='pendiente' ? fmtFecha(p.horaInicio) : null;
+  const marcador = p.estado==='finalizado' ? p.resultadoFinal : (p.marcadorEnVivo || {local:0,visitante:0});
+  const miPronostico = DB.pronosticos.find(pr=>pr.salaId===sala.id && pr.partidoId===p.id && pr.usuarioId===DB.sesionUsuarioId);
+  const otros = DB.pronosticos.filter(pr=>pr.salaId===sala.id && pr.partidoId===p.id && pr.usuarioId!==DB.sesionUsuarioId)
+    .map(pr=>({ pr, u: DB.usuarios.find(u=>u.id===pr.usuarioId) })).filter(x=>x.u);
+
+  let html = `<div class="card">
+    <div class="row">
+      <div style="display:flex;align-items:center;gap:8px"><div class="avatar" style="background:${col.band}">${initials(p.equipoLocal)}</div><span class="small">${p.equipoLocal}</span></div>
+      <span class="tag ${p.estado==='en_juego'?'mono':''}" style="background:${p.estado==='en_juego'?'var(--red-bg)':'var(--paper)'};color:${p.estado==='en_juego'?'var(--red)':'var(--muted)'}">${p.estado==='en_juego'?'● ':''}${estadoTag[0]}</span>
+      <div style="display:flex;align-items:center;gap:8px"><span class="small">${p.equipoVisitante}</span><div class="avatar" style="background:${col.dark}">${initials(p.equipoVisitante)}</div></div>
+    </div>
+    <p class="mono" style="text-align:center;font-size:22px;margin:10px 0">${ p.estado==='pendiente' ? horaTxt : (marcador.local+' — '+marcador.visitante) }</p>`;
+
+  if (p.estado==='pendiente' && inscrito){
+    const vl = miPronostico? miPronostico.valores.local : 0;
+    const vv = miPronostico? miPronostico.valores.visitante : 0;
+    html += `<div class="row" style="gap:10px;border-top:1px solid var(--line);padding-top:10px">
+      <span class="small muted">tu pronóstico</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input class="num" type="number" min="0" max="20" style="width:46px" id="inp-local-${p.id}" value="${vl}">
+        <span class="mono">—</span>
+        <input class="num" type="number" min="0" max="20" style="width:46px" id="inp-visit-${p.id}" value="${vv}">
+        <button class="btn btn-primary" data-action="confirmar_pronostico" data-partido="${p.id}" data-sala="${sala.id}">${miPronostico?'editar':'guardar'}</button>
+      </div>
+    </div>`;
+  } else if (p.estado==='pendiente' && !inscrito){
+    html += `<p class="small muted" style="text-align:center;margin:0">únete a la sala para pronosticar este partido</p>`;
+  } else if (miPronostico){
+    const pts = p.estado==='finalizado' ? puntosDe(miPronostico.valores, p.resultadoFinal) : null;
+    html += `<div class="row" style="border-top:1px solid var(--line);padding-top:10px">
+      <span class="small muted">tu pronóstico: <span class="mono">${miPronostico.valores.local} — ${miPronostico.valores.visitante}</span></span>
+      ${pts!==null? `<span class="small" style="color:${pts===3?'var(--teal)':pts===1?'var(--amber)':'var(--muted)'}">${pts} pts</span>` : '<span class="small muted">bloqueado</span>'}
+    </div>`;
+  }
+
+  if (otros.length){
+    html += `<details style="margin-top:10px"><summary class="small muted">ver pronósticos de otros (${otros.length})</summary>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+      ${otros.map(({pr,u})=>{
+        const pts = p.estado==='finalizado' ? puntosDe(pr.valores, p.resultadoFinal) : null;
+        return `<div class="row"><div style="display:flex;align-items:center;gap:8px"><div class="avatar" style="background:${avatarColor(u.nombre)}">${initials(u.nombre)}</div><span class="small">${u.nombre}</span></div><span class="mono small">${pr.valores.local} — ${pr.valores.visitante}${pts!==null?` · ${pts}pts`:''}</span></div>`;
+      }).join('')}
+      </div>
+    </details>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+/* ---------------------------------------------------------
+   VISTA: login / registro simulado, con verificación de edad real
+   --------------------------------------------------------- */
+function renderLogin(){
+  let html = `<div style="padding:30px 0 10px;text-align:center">
+    <h2 style="font-size:22px">entrar a QuinKong</h2>
+    <p class="small muted">elige tu usuario de demo o regístrate</p>
+  </div>
+  <div class="card" style="padding:8px;overflow:hidden">`;
+  DB.usuarios.filter(u=>u.rol==='jugador').forEach((u,i)=>{
+    html += `<button class="btn btn-block" style="border:none;justify-content:flex-start;padding:12px;${i>0?'border-top:1px solid var(--line)':''};border-radius:0" data-action="login" data-usuario="${u.id}">
+      <div class="avatar" style="background:${avatarColor(u.nombre)}">${initials(u.nombre)}</div>
+      <span style="margin-left:10px">${u.nombre}</span>
+    </button>`;
+  });
+  html += `</div>
+
+  <div class="section-title">¿nuevo aquí?</div>
+  <div class="card">
+    <div class="field"><label>nombre completo</label><input id="reg-nombre" placeholder="Tu nombre"></div>
+    <div class="field"><label>usuario</label><input id="reg-usuario" placeholder="usuario"></div>
+    <div class="field"><label>fecha de nacimiento</label><input id="reg-fecha" type="date"></div>
+    <p class="small muted">verificamos tu edad con esta fecha — debes ser mayor de 18 años para jugar.</p>
+    <button class="btn btn-primary btn-block" data-action="registro">crear cuenta</button>
+  </div>`;
+  return html;
+}
+
+const TERMINOS_TXT = `Estos son los términos y condiciones de uso de QuinKong (contenido de referencia para el MVP).
+
+1. QuinKong es una plataforma de quinielas por sala: cada sala agrupa los partidos de una liga en un día determinado, con una cuota de entrada fija de $50 MXN que cubre todos los partidos de esa sala.
+2. La casa retiene un 16% de comisión sobre lo recaudado en cada sala; el resto forma el fondo de premios.
+3. Los pronósticos quedan congelados de forma inmutable al iniciar cada partido y no pueden modificarse después.
+4. Debes ser mayor de edad (18+) para registrarte y participar.
+5. QuinKong se reserva el derecho de verificar la identidad y edad de los usuarios antes de procesar retiros.
+6. Este texto es un marcador de posición para el MVP; antes de operar con dinero real debe ser revisado por un abogado especializado en juegos de apuesta en México.`;
+
+const PRIVACIDAD_TXT = `Aviso de privacidad de QuinKong (contenido de referencia para el MVP).
+
+Recabamos tu nombre, usuario, fecha de nacimiento y actividad dentro de la plataforma (pronósticos, transacciones) para operar el servicio, calcular premios y cumplir con la verificación de edad.
+No compartimos tus datos con terceros salvo requerimiento legal.
+Puedes solicitar la eliminación de tu cuenta y datos personales en cualquier momento.
+Este texto es un marcador de posición para el MVP; antes de operar con datos reales debe ser revisado y completado conforme a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares.`;
+
+function renderEstatico(titulo, texto){
+  return `<div style="padding:20px 0 10px"><h2>${titulo}</h2></div>
+  <div class="card"><p class="small" style="white-space:pre-line;line-height:1.7;margin:0">${texto}</p></div>`;
+}
+
+/* ---------------------------------------------------------
+   VISTA: panel de administración
+   --------------------------------------------------------- */
+function renderAdmin(){
+  if (!esAdmin()) return '<div class="empty">Esta sección es solo para administradores.<br><br><button class="btn btn-secondary" data-action="ir" data-route="#/login">iniciar sesión como admin</button></div>';
+
+  const ligas = Object.keys(LIGA_COLORS);
+  const totalComision = DB.comisiones.reduce((a,c)=>a+c.monto,0);
+  const abiertasOEnCurso = DB.salas.filter(s=> s.estado==='abierta' || s.estado==='en_curso');
+
+  let html = `<div class="section-title">comisión de la casa</div>
+  <div class="card"><div class="row"><span class="small">acumulado total</span><span class="mono" style="font-size:20px">${money(totalComision)}</span></div></div>`;
+
+  html += `<div class="section-title">crear sala</div>
+  <div class="card">
+    <div class="field"><label>liga</label>
+      <select id="admin-liga">${ligas.map(l=>`<option value="${l}">${l}</option>`).join('')}</select>
+    </div>
+    <p class="small muted" style="margin:-4px 0 10px">cuota de entrada: $50 fijos para todas las salas.</p>
+    <button class="btn btn-primary btn-block" data-action="admin_crear_sala">crear sala</button>
+  </div>`;
+
+  html += `<div class="section-title">salas abiertas / en curso</div>`;
+  if (abiertasOEnCurso.length===0) html += `<div class="card"><p class="small muted" style="margin:0">No hay salas sin cerrar.</p></div>`;
+
+  abiertasOEnCurso.forEach(s=>{
+    const partidos = DB.partidos.filter(p=>p.salaId===s.id);
+    const comisionSala = DB.comisiones.filter(c=>c.salaId===s.id).reduce((a,c)=>a+c.monto,0);
+    html += `<div class="card">
+      <div class="row"><span class="tag" style="background:var(--paper)">${s.liga}</span><span class="small muted">${s.estado}</span></div>
+      <p class="small muted" style="margin:8px 0">${partidos.length} partidos · comisión generada aquí: ${money(comisionSala)}</p>`;
+
+    partidos.forEach(p=>{
+      html += `<div style="border-top:1px solid var(--line);padding:8px 0">
+        <p class="small" style="margin:0 0 4px">${p.equipoLocal} vs ${p.equipoVisitante} · <span class="muted">${p.estado}</span></p>`;
+      if (p.estado!=='finalizado'){
+        html += `<div class="row" style="gap:6px">
+          <input class="num" type="number" min="0" style="width:50px" id="res-local-${p.id}" placeholder="0">
+          <span class="mono">—</span>
+          <input class="num" type="number" min="0" style="width:50px" id="res-visit-${p.id}" placeholder="0">
+          <button class="btn btn-secondary" data-action="admin_capturar_resultado" data-partido="${p.id}">capturar resultado</button>
+        </div>`;
+      } else {
+        html += `<p class="small mono muted" style="margin:0">resultado final: ${p.resultadoFinal.local} — ${p.resultadoFinal.visitante}</p>`;
+      }
+      html += `</div>`;
+    });
+
+    html += `<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:6px">
+      <p class="small muted" style="margin:0 0 6px">agregar partido a esta sala</p>
+      <div class="field"><input id="np-local-${s.id}" placeholder="equipo local"></div>
+      <div class="field"><input id="np-visit-${s.id}" placeholder="equipo visitante"></div>
+      <div class="field"><input id="np-hora-${s.id}" type="datetime-local"></div>
+      <button class="btn btn-secondary btn-block" data-action="admin_agregar_partido" data-sala="${s.id}">agregar partido</button>
+    </div>
+    </div>`;
+  });
+
+  return html;
+}
+function renderRanking(){
+  const filas = DB.usuarios.filter(u=>u.rol==='jugador').map(u=>{
+    const pronosUser = DB.pronosticos.filter(pr=>pr.usuarioId===u.id);
+    let aciertos=0, salasJugadas = new Set();
+    pronosUser.forEach(pr=>{
+      const partido = DB.partidos.find(p=>p.id===pr.partidoId);
+      salasJugadas.add(pr.salaId);
+      if (partido && partido.estado==='finalizado' && puntosDe(pr.valores, partido.resultadoFinal)>0) aciertos++;
+    });
+    const premios = DB.transacciones.filter(t=>t.usuarioId===u.id && t.tipo==='premio').reduce((a,t)=>a+t.monto,0);
+    const entradas = DB.transacciones.filter(t=>t.usuarioId===u.id && t.tipo==='entrada').reduce((a,t)=>a+t.monto,0);
+    return { u, aciertos, ganancias: premios-entradas, salas: salasJugadas.size };
+  }).sort((a,b)=> b.ganancias-a.ganancias);
+
+  let html = `<div class="section-title">temporada — todas las ligas</div><div class="card">`;
+  filas.forEach((f,i)=>{
+    const yo = f.u.id===DB.sesionUsuarioId;
+    html += `<div class="row" style="padding:8px 0;${i>0?'border-top:1px solid var(--line)':''}">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="small muted mono" style="width:18px">${i+1}</span>
+        <div class="avatar" style="background:${avatarColor(f.u.nombre)}">${initials(f.u.nombre)}</div>
+        <div><p class="small" style="margin:0;${yo?'font-weight:600':''}">${f.u.nombre}${yo?' (tú)':''}</p><p class="small muted" style="margin:0">${f.aciertos} aciertos · ${f.salas} salas</p></div>
+      </div>
+      <span class="mono small" style="color:${f.ganancias>=0?'var(--teal)':'var(--red)'}">${f.ganancias>=0?'+':''}${money(f.ganancias)}</span>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+/* ---------------------------------------------------------
+   VISTA: historial de salas pasadas
+   --------------------------------------------------------- */
+function renderHistorial(){
+  const cerradas = DB.salas.filter(s=> s.estado==='finalizada_pagada' || s.estado==='sin_ganador')
+    .sort((a,b)=> (b.fechaResolucion||0)-(a.fechaResolucion||0));
+  if (cerradas.length===0) return '<div class="empty">Todavía no hay salas resueltas.</div>';
+
+  let html = '';
+  cerradas.forEach(s=>{
+    const col = LIGA_COLORS[s.liga] || LIGA_COLORS['Mundial FIFA 2026'];
+    const participantes = DB.inscripciones.filter(i=>i.salaId===s.id).length;
+    const bolsa = calcularBolsa(participantes, s.rolloverAnterior);
+    html += `<div class="card">
+      <div class="row"><span class="tag" style="background:${col.bg};color:${col.text}">${s.liga}</span><span class="small muted">${s.fechaResolucion? fmtFecha(s.fechaResolucion):''}</span></div>`;
+    if (s.estado==='sin_ganador'){
+      html += `<p class="small muted" style="margin:10px 0 0"><strong style="color:var(--ink)">sin ganador — acumulada.</strong> ${money(bolsa.bolsaTotalAEntregar)} pasan a la siguiente sala de ${s.liga}.</p>`;
+    } else {
+      const ganadores = s.resultadoDia.ganadores.map(uid=>DB.usuarios.find(u=>u.id===uid)).filter(Boolean);
+      const monto = bolsa.bolsaTotalAEntregar / ganadores.length;
+      const criterioTxt = { puntos:'ganador único por puntos', exactos:'desempate por marcadores exactos', distancia:'desempate por cercanía de marcador', reparto:'reparto igualitario por empate total' }[s.resultadoDia.criterio] || '';
+      html += `<p class="small muted" style="margin:10px 0 4px">${criterioTxt} · bolsa ${money(bolsa.bolsaTotalAEntregar)}</p>`;
+      ganadores.forEach(g=> html += `<div class="row" style="padding:3px 0"><span class="small">${g.nombre}</span><span class="mono small" style="color:${col.text}">${money(monto)}</span></div>`);
+    }
+    html += `</div>`;
+  });
+  return html;
+}
+
+/* ---------------------------------------------------------
+   VISTA: wallet — saldo, depósito/retiro, juego responsable
+   --------------------------------------------------------- */
+function renderWallet(){
+  const u = usuarioActual();
+  const txs = DB.transacciones.filter(t=>t.usuarioId===u.id).sort((a,b)=>b.fecha-a.fecha).slice(0,20);
+  const tipoLabel = { entrada:'entrada a sala', premio:'premio ganado', deposito:'depósito', retiro:'retiro' };
+  let html = `<div class="liga-band" style="background:var(--teal)">
+    <p class="liga-pot-label">tu saldo</p>
+    <p class="liga-pot">${money(u.saldo)}</p>
+  </div>
+  <div class="row" style="gap:10px;margin-top:14px">
+    <button class="btn btn-primary btn-block" data-action="depositar"><i class="ti ti-plus" aria-hidden="true"></i>depositar</button>
+    <button class="btn btn-secondary btn-block" data-action="retirar"><i class="ti ti-arrow-up-right" aria-hidden="true"></i>retirar</button>
+  </div>
+
+  <div class="section-title">juego responsable</div>
+  <div class="card">
+    <div class="row"><span class="small">límite de depósito mensual</span><span class="mono small">${money(DB.limiteDeposito)}</span></div>
+    <button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="cambiar_limite">cambiar límite</button>
+    <div class="row" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+      <span class="small">autoexclusión</span>
+      <button class="btn ${DB.autoexcluido?'btn-danger':'btn-secondary'}" data-action="toggle_autoexclusion">${DB.autoexcluido?'desactivar':'activar'}</button>
+    </div>
+    ${DB.autoexcluido? '<p class="small" style="color:var(--red);margin:8px 0 0">tienes la autoexclusión activada: no puedes unirte a nuevas salas ni depositar.</p>':''}
+  </div>
+
+  <div class="section-title">historial de transacciones</div>
+  <div class="card">`;
+  if (txs.length===0) html += `<p class="small muted" style="margin:0">Sin movimientos todavía.</p>`;
+  txs.forEach((t,i)=>{
+    const signo = (t.tipo==='premio'||t.tipo==='deposito') ? '+' : '-';
+    const color = signo==='+' ? 'var(--teal)' : 'var(--ink)';
+    html += `<div class="row" style="padding:6px 0;${i>0?'border-top:1px solid var(--line)':''}">
+      <div><p class="small" style="margin:0">${tipoLabel[t.tipo]||t.tipo}</p><p class="small muted" style="margin:0">${fmtFecha(t.fecha)}</p></div>
+      <span class="mono small" style="color:${color}">${signo}${money(t.monto)}</span>
+    </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
+
+/* ---------------------------------------------------------
+   VISTA: perfil
+   --------------------------------------------------------- */
+function renderPerfil(){
+  const u = usuarioActual();
+  if (!u) return renderLogin();
+  let html = `<div class="card" style="text-align:center;padding:24px 14px">
+    <div class="avatar" style="background:${avatarColor(u.nombre)};width:56px;height:56px;font-size:18px;margin:0 auto 10px">${initials(u.nombre)}</div>
+    <h2>${u.nombre}</h2>
+    <p class="small muted" style="margin:4px 0 0">@${u.usuario} · ${edadDeFecha(u.fechaNacimiento)} años</p>
+  </div>
+  <div class="card" style="margin-top:12px;padding:0;overflow:hidden">
+    ${esAdmin()? '<button class="btn btn-block" style="border:none;border-radius:0;justify-content:flex-start;padding:14px" data-action="ir" data-route="#/admin"><i class="ti ti-settings" aria-hidden="true"></i>panel de administración</button>':''}
+    <button class="btn btn-block" style="border:none;border-radius:0;justify-content:flex-start;padding:14px;border-top:1px solid var(--line)" data-action="ir" data-route="#/terminos"><i class="ti ti-file-text" aria-hidden="true"></i>términos y condiciones</button>
+    <button class="btn btn-block" style="border:none;border-radius:0;justify-content:flex-start;padding:14px;border-top:1px solid var(--line)" data-action="ir" data-route="#/privacidad"><i class="ti ti-lock" aria-hidden="true"></i>aviso de privacidad</button>
+    <button class="btn btn-block" style="border:none;border-radius:0;justify-content:flex-start;padding:14px;border-top:1px solid var(--line)" data-action="reportar"><i class="ti ti-flag-3" aria-hidden="true"></i>reportar un problema</button>
+  </div>
+  <button class="btn btn-secondary btn-block" style="margin-top:14px" data-action="cerrar_sesion">cerrar sesión</button>
+  <button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="reset_demo">reiniciar datos de demo</button>
+  `;
+  return html;
+}
+
+/* ---------------------------------------------------------
+   DISPATCHER DE ACCIONES
+   --------------------------------------------------------- */
+function handleChange(action, el){ /* reservado para futuros controles con data-onchange */ }
+
+function handleAction(action, el){
+  const ds = el.dataset;
+
+  if (action==='ir'){ location.hash = ds.route; return; }
+  if (action==='ver_sala'){ location.hash = '#/sala/'+ds.sala; return; }
+  if (action==='cerrar_modal'){ closeModal(); return; }
+  if (action==='reportar'){ toast('Gracias, reportamos esto al equipo (simulado).'); return; }
+  if (action==='reset_demo'){ resetDemo(); return; }
+
+  /* ---- unirse a sala ---- */
+  if (action==='unirse_sala'){
+    const salaId = ds.sala;
+    showModal(`<h3>unirte a la sala</h3>
+      <p class="small muted" style="margin-top:8px">¿Confirmas unirte por <strong style="color:var(--ink)">$50</strong>? Esta cuota cubre todos los partidos del día de esta sala — no se cobra por partido.</p>
+      <div class="row" style="gap:8px;margin-top:16px">
+        <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
+        <button class="btn btn-primary btn-block" data-action="confirmar_union" data-sala="${salaId}">confirmar y pagar</button>
+      </div>`);
+    return;
+  }
+  if (action==='confirmar_union'){
+    const salaId = ds.sala; const u = usuarioActual();
+    if (!u){ closeModal(); location.hash='#/login'; return; }
+    if (DB.autoexcluido){ toast('Tienes la autoexclusión activada — no puedes unirte a salas.'); closeModal(); return; }
+    if (u.saldo < 50){ toast('Saldo insuficiente. Deposita primero en tu wallet.'); closeModal(); return; }
+    u.saldo -= 50;
+    DB.inscripciones.push({ id:uid('insc'), salaId, usuarioId:u.id, fecha:Date.now() });
+    DB.transacciones.push({ id:uid('tx'), usuarioId:u.id, tipo:'entrada', monto:50, fecha:Date.now(), salaId });
+    persist(); closeModal(); render(); toast('¡Estás dentro! Ya puedes pronosticar.');
+    return;
+  }
+
+  /* ---- pronóstico con confirmación fuerte ---- */
+  if (action==='confirmar_pronostico'){
+    const partidoId = ds.partido, salaId = ds.sala;
+    const vl = parseInt(document.getElementById('inp-local-'+partidoId).value, 10);
+    const vv = parseInt(document.getElementById('inp-visit-'+partidoId).value, 10);
+    if (isNaN(vl) || isNaN(vv) || vl<0 || vv<0){ toast('Ingresa un marcador válido.'); return; }
+    showModal(`<h3>confirmar pronóstico</h3>
+      <p class="small muted" style="margin:10px 0">¿Confirmas <strong class="mono" style="color:var(--ink)">${vl} — ${vv}</strong>? No podrás cambiarlo después de que inicie el partido.</p>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
+        <button class="btn btn-primary btn-block" data-action="guardar_pronostico" data-partido="${partidoId}" data-sala="${salaId}" data-local="${vl}" data-visit="${vv}">confirmar</button>
+      </div>`);
+    return;
+  }
+  if (action==='guardar_pronostico'){
+    const partidoId = ds.partido, salaId = ds.sala, vl = parseInt(ds.local,10), vv = parseInt(ds.visit,10);
+    const partido = DB.partidos.find(p=>p.id===partidoId);
+    const u = usuarioActual();
+    if (!partido || !u){ closeModal(); return; }
+    if (partido.estado!=='pendiente'){ toast('Este partido ya inició — el pronóstico queda bloqueado.'); closeModal(); render(); return; }
+    let prono = DB.pronosticos.find(pr=>pr.partidoId===partidoId && pr.usuarioId===u.id);
+    if (prono){ prono.valores = {local:vl, visitante:vv}; prono.fecha = Date.now(); }
+    else { DB.pronosticos.push({ id:uid('prono'), salaId, partidoId, usuarioId:u.id, valores:{local:vl, visitante:vv}, fecha:Date.now() }); }
+    persist(); closeModal(); render(); toast('Pronóstico guardado.');
+    return;
+  }
+
+  /* ---- wallet ---- */
+  if (action==='depositar'){
+    showModal(`<h3>depositar</h3>
+      <div class="field" style="margin-top:12px"><label>monto</label><input type="number" min="1" id="modal-monto" placeholder="$"></div>
+      <p class="small muted">límite mensual: ${money(DB.limiteDeposito)}</p>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
+        <button class="btn btn-primary btn-block" data-action="confirmar_deposito">depositar</button>
+      </div>`);
+    return;
+  }
+  if (action==='confirmar_deposito'){
+    const u = usuarioActual(); const monto = parseFloat(document.getElementById('modal-monto').value);
+    if (DB.autoexcluido){ toast('Tienes la autoexclusión activada — no puedes depositar.'); closeModal(); return; }
+    if (isNaN(monto) || monto<=0){ toast('Ingresa un monto válido.'); return; }
+    if (monto > DB.limiteDeposito){ toast('Ese monto supera tu límite mensual de '+money(DB.limiteDeposito)+'.'); return; }
+    u.saldo += monto;
+    DB.transacciones.push({ id:uid('tx'), usuarioId:u.id, tipo:'deposito', monto, fecha:Date.now(), salaId:null });
+    persist(); closeModal(); render(); toast('Depósito simulado por '+money(monto)+'.');
+    return;
+  }
+  if (action==='retirar'){
+    showModal(`<h3>retirar</h3>
+      <div class="field" style="margin-top:12px"><label>monto</label><input type="number" min="1" id="modal-monto" placeholder="$"></div>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
+        <button class="btn btn-primary btn-block" data-action="confirmar_retiro">retirar</button>
+      </div>`);
+    return;
+  }
+  if (action==='confirmar_retiro'){
+    const u = usuarioActual(); const monto = parseFloat(document.getElementById('modal-monto').value);
+    if (isNaN(monto) || monto<=0){ toast('Ingresa un monto válido.'); return; }
+    if (monto > u.saldo){ toast('No tienes saldo suficiente.'); return; }
+    u.saldo -= monto;
+    DB.transacciones.push({ id:uid('tx'), usuarioId:u.id, tipo:'retiro', monto, fecha:Date.now(), salaId:null });
+    persist(); closeModal(); render(); toast('Retiro simulado por '+money(monto)+'.');
+    return;
+  }
+  if (action==='cambiar_limite'){
+    showModal(`<h3>límite de depósito mensual</h3>
+      <div class="field" style="margin-top:12px"><label>nuevo límite</label><input type="number" min="1" id="modal-monto" value="${DB.limiteDeposito}"></div>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
+        <button class="btn btn-primary btn-block" data-action="confirmar_limite">guardar</button>
+      </div>`);
+    return;
+  }
+  if (action==='confirmar_limite'){
+    const monto = parseFloat(document.getElementById('modal-monto').value);
+    if (isNaN(monto) || monto<=0){ toast('Ingresa un monto válido.'); return; }
+    DB.limiteDeposito = monto; persist(); closeModal(); render(); toast('Límite actualizado.');
+    return;
+  }
+  if (action==='toggle_autoexclusion'){
+    DB.autoexcluido = !DB.autoexcluido; persist(); render();
+    toast(DB.autoexcluido ? 'Autoexclusión activada.' : 'Autoexclusión desactivada.');
+    return;
+  }
+
+  /* ---- login / registro ---- */
+  if (action==='login'){
+    DB.sesionUsuarioId = ds.usuario; persist();
+    const u = usuarioActual();
+    location.hash = '#/salas'; toast('Hola, '+(u?u.nombre:'')+'.');
+    return;
+  }
+  if (action==='registro'){
+    const nombre = document.getElementById('reg-nombre').value.trim();
+    const usuario = document.getElementById('reg-usuario').value.trim();
+    const fecha = document.getElementById('reg-fecha').value;
+    if (!nombre || !usuario || !fecha){ toast('Completa nombre, usuario y fecha de nacimiento.'); return; }
+    if (edadDeFecha(fecha) < 18){ toast('Debes ser mayor de 18 años para registrarte en QuinKong.'); return; }
+    const nuevo = { id:uid('u'), nombre, usuario, saldo:500, fechaNacimiento:fecha, rol:'jugador' };
+    DB.usuarios.push(nuevo); DB.sesionUsuarioId = nuevo.id; persist();
+    location.hash = '#/salas'; toast('Cuenta creada — bienvenido, '+nombre+'.');
+    return;
+  }
+  if (action==='cerrar_sesion'){ DB.sesionUsuarioId = null; persist(); location.hash = '#/login'; return; }
+
+  /* ---- admin ---- */
+  if (action==='admin_crear_sala'){
+    const liga = document.getElementById('admin-liga').value;
+    const rollover = DB.rolloverPools[liga] || 0;
+    DB.salas.push({ id:uid('sala'), liga, cuotaEntrada:50, estado:'abierta', rolloverAnterior: rollover, resultadoDia:null, fechaResolucion:null });
+    DB.rolloverPools[liga] = 0;
+    persist(); render(); toast('Sala de '+liga+' creada.');
+    return;
+  }
+  if (action==='admin_agregar_partido'){
+    const salaId = ds.sala;
+    const local = document.getElementById('np-local-'+salaId).value.trim();
+    const visit = document.getElementById('np-visit-'+salaId).value.trim();
+    const horaStr = document.getElementById('np-hora-'+salaId).value;
+    if (!local || !visit || !horaStr){ toast('Completa equipo local, visitante y hora.'); return; }
+    const sala = DB.salas.find(s=>s.id===salaId);
+    if (sala.estado==='finalizada_pagada' || sala.estado==='sin_ganador'){ toast('Esta sala ya está cerrada.'); return; }
+    DB.partidos.push({ id:uid('partido'), salaId, equipoLocal:local, equipoVisitante:visit, horaInicio:new Date(horaStr).getTime(), estado:'pendiente', resultadoFinal:null, marcadorEnVivo:null });
+    persist(); render(); toast('Partido agregado.');
+    return;
+  }
+  if (action==='admin_capturar_resultado'){
+    const partidoId = ds.partido;
+    const rl = parseInt(document.getElementById('res-local-'+partidoId).value, 10);
+    const rv = parseInt(document.getElementById('res-visit-'+partidoId).value, 10);
+    if (isNaN(rl) || isNaN(rv) || rl<0 || rv<0){ toast('Ingresa un resultado válido.'); return; }
+    resolverPartido(partidoId, {local:rl, visitante:rv});
+    render(); toast('Resultado capturado — el motor resolvió la jornada si correspondía.');
+    return;
+  }
+}
+
+/* ---------------------------------------------------------
+   ARRANQUE
+   --------------------------------------------------------- */
+async function init(){
+  await cargarOInicializar();
+  render();
+  setInterval(()=>{ actualizarEstadosPorTiempo(); render(); }, 20000);
+}
+init();
+</script>
+</body>
+</html>
