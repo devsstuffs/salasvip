@@ -400,23 +400,21 @@ function resolverHistorialSeed(){
 }
 
 /* ---------------------------------------------------------
-   ESTADO GLOBAL + PERSISTENCIA (artifact storage)
+   ESTADO GLOBAL + PERSISTENCIA (localStorage del navegador —
+   funciona standalone, sin depender de ninguna plataforma)
    --------------------------------------------------------- */
 let DB = null;
-let _saving = false;
 function persist(){
   if (!DB) return;
-  _saving = true;
-  window.storage.set('quinkong_db', JSON.stringify(DB), false)
-    .catch(err=> console.error('No se pudo guardar el estado:', err))
-    .finally(()=>{ _saving=false; });
+  try { localStorage.setItem('quinkong_db', JSON.stringify(DB)); }
+  catch(err){ console.error('No se pudo guardar el estado en este navegador:', err); }
 }
 
 async function cargarOInicializar(){
   try {
-    const res = await window.storage.get('quinkong_db', false);
-    if (res && res.value) { DB = JSON.parse(res.value); return; }
-  } catch(e) { /* todavía no hay datos guardados — sembramos */ }
+    const raw = localStorage.getItem('quinkong_db');
+    if (raw) { DB = JSON.parse(raw); return; }
+  } catch(e) { /* todavía no hay datos guardados, o el navegador bloquea localStorage — sembramos */ }
   DB = seedData();
   resolverHistorialSeed();
   persist();
