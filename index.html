@@ -89,13 +89,19 @@
   <button class="navitem" data-route="#/historial"><i class="ti ti-clock"></i><span>historial</span></button>
   <button class="navitem" data-route="#/wallet"><i class="ti ti-wallet"></i><span>wallet</span></button>
 </nav>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 "use strict";
 
 /* =========================================================
-   QuinKong — MVP de quiniela por sala/día/liga
+   QuinKong — versión real con Supabase
    Dirección visual: ilustrado deportivo juguetón
    ========================================================= */
+
+const SUPABASE_URL = 'https://bklubrvmjqllpbikudcf.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_QxcIaOnHjyDdoBmCppVl7Q__pzrx91L';
+const EDGE_FUNCTION_URL = SUPABASE_URL + '/functions/v1/admin-api';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const LIGA_COLORS = {
   'Mundial FIFA 2026': { band:'#0F6E56', bg:'var(--teal-bg)', mid:'var(--teal-mid)', dark:'var(--teal-dark)', text:'var(--teal)', icon:'ti-ball-football' },
@@ -153,279 +159,93 @@ function statsDeSala(salaId){
   }).sort((a,b)=> b.puntos-a.puntos || b.exactos-a.exactos || a.dist-b.dist);
 }
 
-function resolverDiaSiCorresponde(salaId){
-  const sala = DB.salas.find(s=>s.id===salaId);
-  const partidos = DB.partidos.filter(p=>p.salaId===salaId);
-  if (partidos.length===0 || partidos.some(p=>p.estado!=='finalizado')) return;
+/* ---------------------------------------------------------
+   MAPEADORES — convierten las filas de Supabase (snake_case,
+   columnas planas) al mismo formato que ya usan las pantallas
+   (camelCase, algunos campos anidados). Así renderSalas/renderSala/
+   etc. casi no cambiaron respecto al MVP en memoria.
+   --------------------------------------------------------- */
+function mapSala(r){
+  return { id:r.id, liga:r.liga, cuotaEntrada:r.cuota_entrada, estado:r.estado,
+    rolloverAnterior:r.rollover_anterior, resultadoDia:r.resultado_dia,
+    fechaResolucion: r.fecha_resolucion ? new Date(r.fecha_resolucion).getTime() : null };
+}
+function mapPartido(r){
+  return { id:r.id, salaId:r.sala_id, equipoLocal:r.equipo_local, equipoVisitante:r.equipo_visitante,
+    horaInicio: new Date(r.hora_inicio).getTime(), estado:r.estado,
+    resultadoFinal:r.resultado_final, marcadorEnVivo:r.marcador_en_vivo };
+}
+function mapInscripcion(r){ return { id:r.id, salaId:r.sala_id, usuarioId:r.usuario_id, fecha:new Date(r.fecha).getTime() }; }
+function mapPronostico(r){ return { id:r.id, salaId:r.sala_id, partidoId:r.partido_id, usuarioId:r.usuario_id, valores:{local:r.local, visitante:r.visitante}, fecha:new Date(r.fecha).getTime() }; }
+function mapTransaccion(r){ return { id:r.id, usuarioId:r.usuario_id, tipo:r.tipo, monto:r.monto, salaId:r.sala_id, fecha:new Date(r.fecha).getTime() }; }
+function mapComision(r){ return { id:r.id, salaId:r.sala_id, monto:r.monto, fecha:new Date(r.fecha).getTime() }; }
+function mapPerfil(r){ return { id:r.id, nombre:r.nombre, usuario:r.usuario, fechaNacimiento:r.fecha_nacimiento, rol:r.rol }; }
 
-  const participantes = DB.inscripciones.filter(i=>i.salaId===salaId).length;
-  const bolsa = calcularBolsa(participantes, sala.rolloverAnterior||0);
-  DB.comisiones.push({ id: uid('com'), salaId, monto: bolsa.comisionCasa, fecha: Date.now() });
+/* ---------------------------------------------------------
+   ESTADO GLOBAL — ahora es un espejo en memoria de lo que hay
+   en Supabase, no la fuente de verdad. Se repuebla con cargarTodo()
+   tras cada acción y cada evento de Realtime.
+   --------------------------------------------------------- */
+let DB = {
+  usuarios:[], salas:[], partidos:[], inscripciones:[], pronosticos:[], transacciones:[], comisiones:[],
+  sesionUsuarioId:null, miWallet:{ saldo:0, limiteDeposito:2000, autoexcluido:false },
+};
 
-  const stats = statsDeSala(salaId);
-  const maxPuntos = stats.length ? Math.max(...stats.map(s=>s.puntos)) : 0;
+function yaInicio(partido){ return partido.horaInicio <= Date.now(); }
 
-  if (maxPuntos === 0){
-    sala.estado = 'sin_ganador';
-    sala.resultadoDia = { ganadores: [], nivel: 'sin_ganador', criterio: null, maxPuntos: 0 };
-    sala.fechaResolucion = Date.now();
-    DB.rolloverPools[sala.liga] = (DB.rolloverPools[sala.liga]||0) + bolsa.bolsaTotalAEntregar;
-    persist(); return;
-  }
+async function obtenerToken(){
+  const { data:{ session } } = await sb.auth.getSession();
+  return session ? session.access_token : null;
+}
 
-  let candidatos = stats.filter(s=>s.puntos===maxPuntos);
-  let criterio = 'puntos';
-  if (candidatos.length>1){
-    const maxEx = Math.max(...candidatos.map(c=>c.exactos));
-    if (candidatos.some(c=>c.exactos!==maxEx) || candidatos.length>1){
-      const filtrados = candidatos.filter(c=>c.exactos===maxEx);
-      if (filtrados.length < candidatos.length) criterio='exactos';
-      candidatos = filtrados;
+/* Trae todo lo que las pantallas necesitan. A esta escala (decenas de
+   salas, no millones) es más simple y más seguro que sincronizar fila
+   por fila — RLS decide qué llega de cada tabla según quién pregunta. */
+async function cargarTodo(){
+  const [salasR, partidosR, inscR, pronR, perfilesR, txR, comR] = await Promise.all([
+    sb.from('salas').select('*').order('created_at', { ascending:true }),
+    sb.from('partidos').select('*'),
+    sb.from('inscripciones').select('*'),
+    sb.from('pronosticos').select('*'),
+    sb.from('profiles').select('*'),
+    sb.from('transacciones').select('*'),
+    sb.from('comisiones').select('*'),
+  ]);
+
+  DB.salas = (salasR.data || []).map(mapSala);
+  DB.partidos = (partidosR.data || []).map(mapPartido);
+  DB.inscripciones = (inscR.data || []).map(mapInscripcion);
+  DB.pronosticos = (pronR.data || []).map(mapPronostico);
+  DB.usuarios = (perfilesR.data || []).map(mapPerfil);
+  DB.transacciones = (txR.data || []).map(mapTransaccion);
+  DB.comisiones = (comR.data || []).map(mapComision);
+
+  if (DB.sesionUsuarioId){
+    const { data: walletRow } = await sb.from('wallets').select('*').eq('usuario_id', DB.sesionUsuarioId).maybeSingle();
+    if (walletRow){
+      DB.miWallet = { saldo:walletRow.saldo, limiteDeposito:walletRow.limite_deposito, autoexcluido:walletRow.autoexcluido };
+      const yo = DB.usuarios.find(u=>u.id===DB.sesionUsuarioId);
+      if (yo) yo.saldo = walletRow.saldo;
     }
   }
-  if (candidatos.length>1){
-    const minDist = Math.min(...candidatos.map(c=>c.dist));
-    const filtrados = candidatos.filter(c=>c.dist===minDist);
-    if (filtrados.length < candidatos.length) criterio='distancia';
-    candidatos = filtrados;
-  }
-  if (candidatos.length>1) criterio='reparto';
-
-  const monto = bolsa.bolsaTotalAEntregar / candidatos.length;
-  candidatos.forEach(c=>{
-    DB.transacciones.push({ id: uid('tx'), usuarioId: c.usuarioId, tipo:'premio', monto, fecha: Date.now(), salaId });
-    const u = DB.usuarios.find(u=>u.id===c.usuarioId); if(u) u.saldo += monto;
-  });
-  sala.estado = 'finalizada_pagada';
-  sala.resultadoDia = { ganadores: candidatos.map(c=>c.usuarioId), nivel:'pagada', criterio, maxPuntos };
-  sala.fechaResolucion = Date.now();
-  DB.rolloverPools[sala.liga] = 0;
-  persist();
 }
 
-function resolverPartido(partidoId, resultadoFinal){
-  const partido = DB.partidos.find(p=>p.id===partidoId);
-  if (!partido) return;
-  partido.resultadoFinal = resultadoFinal;
-  partido.estado = 'finalizado';
-  persist();
-  resolverDiaSiCorresponde(partido.salaId);
-}
-
-let _uidc = 0;
-function uid(prefix){ _uidc++; return prefix + '_' + Date.now().toString(36) + _uidc; }
-
-/* ---------------------------------------------------------
-   DATOS DE PRUEBA (sección 8) — equipos reales, nombres mexicanos.
-   Las salas históricas se resuelven con el motor real al iniciar,
-   no con números inventados a mano.
-   --------------------------------------------------------- */
-const HOY = Date.now();
-const H = (horas)=> HOY + horas*3600000;
-const DIA = (n)=> n*86400000;
-
-function seedData(){
-  const usuarios = [
-    { id:'u1', nombre:'Hugo Treviño', usuario:'hugo', saldo:500, fechaNacimiento:'1992-04-12', rol:'jugador' },
-    { id:'u2', nombre:'Eduardo Ramírez', usuario:'lalo', saldo:500, fechaNacimiento:'1990-01-20', rol:'jugador' },
-    { id:'u3', nombre:'Paola Gómez', usuario:'pao', saldo:500, fechaNacimiento:'1995-07-03', rol:'jugador' },
-    { id:'u4', nombre:'Itzel Vargas', usuario:'itzel', saldo:500, fechaNacimiento:'1998-11-29', rol:'jugador' },
-    { id:'u5', nombre:'Marco Solís', usuario:'marco', saldo:500, fechaNacimiento:'1989-03-15', rol:'jugador' },
-    { id:'u6', nombre:'Karla Núñez', usuario:'karla', saldo:500, fechaNacimiento:'2001-09-08', rol:'jugador' },
-    { id:'u7', nombre:'Jorge Aguilar', usuario:'jorge', saldo:500, fechaNacimiento:'1994-05-22', rol:'jugador' },
-    { id:'u8', nombre:'Daniela Ortiz', usuario:'dani', saldo:500, fechaNacimiento:'1996-12-02', rol:'jugador' },
-    { id:'admin', nombre:'Administrador QuinKong', usuario:'admin', saldo:0, fechaNacimiento:'1985-01-01', rol:'admin' },
-  ];
-
-  const salas = []; const partidos = []; const pronosticos = []; const inscripciones = []; const transacciones = []; const comisiones = [];
-  function addSala({liga, estado, rolloverAnterior, horaPartidosBase, partidosDef, inscritosIds, pronosDef}){
-    const salaId = uid('sala');
-    salas.push({ id:salaId, liga, cuotaEntrada:50, estado, rolloverAnterior: rolloverAnterior||0, resultadoDia:null, fechaResolucion:null });
-    const partidoIds = [];
-    partidosDef.forEach(pd=>{
-      const partidoId = uid('partido');
-      partidoIds.push(partidoId);
-      partidos.push({ id:partidoId, salaId, equipoLocal:pd.local, equipoVisitante:pd.visitante, horaInicio:pd.horaInicio, estado:pd.estado||'pendiente', resultadoFinal:pd.resultadoFinal||null, marcadorEnVivo:pd.marcadorEnVivo||null });
-    });
-    inscritosIds.forEach(uidUser=>{ inscripciones.push({ id:uid('insc'), salaId, usuarioId:uidUser, fecha:Date.now() });
-      transacciones.push({ id:uid('tx'), usuarioId:uidUser, tipo:'entrada', monto:50, fecha:Date.now(), salaId });
-      const usr = usuarios.find(u=>u.id===uidUser); if (usr) usr.saldo -= 50;
-    });
-    (pronosDef||[]).forEach(pr=>{
-      pronosticos.push({ id:uid('prono'), salaId, partidoId:partidoIds[pr.partidoIdx], usuarioId:pr.usuarioId, valores:pr.valores, fecha:Date.now()-DIA(0.01) });
-    });
-    return { salaId, partidoIds };
-  }
-
-  /* ---- HOY: salas activas ---- */
-  addSala({
-    liga:'Mundial FIFA 2026', estado:'abierta', horaPartidosBase:H(1),
-    partidosDef:[
-      { local:'México', visitante:'Polonia', horaInicio:H(-0.7), estado:'pendiente', marcadorEnVivo:{local:1,visitante:0} },
-      { local:'Argentina', visitante:'Francia', horaInicio:H(1.5) },
-      { local:'Brasil', visitante:'España', horaInicio:H(2.5) },
-    ],
-    inscritosIds:['u1','u2','u3','u4'],
-    pronosDef:[
-      { usuarioId:'u2', partidoIdx:0, valores:{local:2,visitante:1} },
-      { usuarioId:'u3', partidoIdx:0, valores:{local:1,visitante:0} },
-      { usuarioId:'u4', partidoIdx:0, valores:{local:3,visitante:0} },
-      { usuarioId:'u1', partidoIdx:0, valores:{local:2,visitante:0} },
-    ]
-  });
-
-  addSala({
-    liga:'Liga MX', estado:'abierta',
-    partidosDef:[
-      { local:'Club América', visitante:'Cruz Azul', horaInicio:H(3) },
-      { local:'Monterrey', visitante:'Tigres UANL', horaInicio:H(3.5) },
-    ],
-    inscritosIds:['u1','u5','u6'],
-    pronosDef:[]
-  });
-
-  addSala({
-    liga:'NBA', estado:'abierta',
-    partidosDef:[
-      { local:'Lakers', visitante:'Celtics', horaInicio:H(5) },
-      { local:'Warriors', visitante:'Heat', horaInicio:H(5.5) },
-    ],
-    inscritosIds:['u1','u7'],
-    pronosDef:[]
-  });
-
-  addSala({
-    liga:'MLB', estado:'abierta',
-    partidosDef:[
-      { local:'Yankees', visitante:'Dodgers', horaInicio:H(4) },
-      { local:'Astros', visitante:'Braves', horaInicio:H(4.5) },
-    ],
-    inscritosIds:['u1','u8'],
-    pronosDef:[]
-  });
-
-  /* ---- HISTORIAL: escenario E (rollover) — NBA sala H1, día -3, nadie acierta ---- */
-  const h1 = addSala({
-    liga:'NBA', estado:'abierta', horaPartidosBase:HOY-DIA(3),
-    partidosDef:[
-      { local:'Lakers', visitante:'Celtics', horaInicio:HOY-DIA(3), estado:'finalizado', resultadoFinal:{local:100,visitante:95} },
-      { local:'Warriors', visitante:'Heat', horaInicio:HOY-DIA(3), estado:'finalizado', resultadoFinal:{local:88,visitante:90} },
-      { local:'Suns', visitante:'Mavericks', horaInicio:HOY-DIA(3), estado:'finalizado', resultadoFinal:{local:110,visitante:108} },
-    ],
-    inscritosIds:['u5','u6','u7','u8'],
-    pronosDef:[
-      { usuarioId:'u5', partidoIdx:0, valores:{local:90,visitante:100} }, { usuarioId:'u5', partidoIdx:1, valores:{local:95,visitante:80} }, { usuarioId:'u5', partidoIdx:2, valores:{local:90,visitante:120} },
-      { usuarioId:'u6', partidoIdx:0, valores:{local:80,visitante:99} }, { usuarioId:'u6', partidoIdx:1, valores:{local:99,visitante:85} }, { usuarioId:'u6', partidoIdx:2, valores:{local:85,visitante:130} },
-      { usuarioId:'u7', partidoIdx:0, valores:{local:70,visitante:101} },
-      { usuarioId:'u8', partidoIdx:1, valores:{local:70,visitante:65} },
-    ]
-  });
-
-  /* ---- HISTORIAL: escenario A + E — NBA sala H2, día -2, recibe el rollover de H1 ---- */
-  const h2 = addSala({
-    liga:'NBA', estado:'abierta', rolloverAnterior:0, horaPartidosBase:HOY-DIA(2),
-    partidosDef:[ { local:'Bulls', visitante:'Knicks', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:1,visitante:0} } ],
-    inscritosIds:['u1','u3'],
-    pronosDef:[
-      { usuarioId:'u1', partidoIdx:0, valores:{local:1,visitante:0} },
-      { usuarioId:'u3', partidoIdx:0, valores:{local:0,visitante:1} },
-    ]
-  });
-
-  /* ---- HISTORIAL: escenario B — Liga MX sala H3, día -2, empate resuelto por exactos ---- */
-  const h3 = addSala({
-    liga:'Liga MX', estado:'abierta', horaPartidosBase:HOY-DIA(2),
-    partidosDef:[
-      { local:'Club América', visitante:'Cruz Azul', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:2,visitante:0} },
-      { local:'Monterrey', visitante:'Tigres UANL', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:1,visitante:0} },
-      { local:'Toluca', visitante:'León', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:0,visitante:1} },
-      { local:'Santos Laguna', visitante:'Pachuca', horaInicio:HOY-DIA(2), estado:'finalizado', resultadoFinal:{local:1,visitante:1} },
-    ],
-    inscritosIds:['u4','u7','u6'],
-    pronosDef:[
-      { usuarioId:'u4', partidoIdx:0, valores:{local:2,visitante:0} }, { usuarioId:'u4', partidoIdx:1, valores:{local:1,visitante:0} }, { usuarioId:'u4', partidoIdx:2, valores:{local:2,visitante:0} }, { usuarioId:'u4', partidoIdx:3, valores:{local:0,visitante:1} },
-      { usuarioId:'u7', partidoIdx:0, valores:{local:3,visitante:1} }, { usuarioId:'u7', partidoIdx:1, valores:{local:2,visitante:0} }, { usuarioId:'u7', partidoIdx:2, valores:{local:0,visitante:2} }, { usuarioId:'u7', partidoIdx:3, valores:{local:1,visitante:1} },
-      { usuarioId:'u6', partidoIdx:0, valores:{local:0,visitante:1} }, { usuarioId:'u6', partidoIdx:1, valores:{local:0,visitante:1} }, { usuarioId:'u6', partidoIdx:2, valores:{local:1,visitante:0} }, { usuarioId:'u6', partidoIdx:3, valores:{local:0,visitante:2} },
-    ]
-  });
-
-  /* ---- HISTORIAL: escenario C — Mundial sala H4, día -1, empate resuelto por distancia ---- */
-  const h4 = addSala({
-    liga:'Mundial FIFA 2026', estado:'abierta', horaPartidosBase:HOY-DIA(1),
-    partidosDef:[
-      { local:'México', visitante:'Canadá', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:1,visitante:0} },
-      { local:'Argentina', visitante:'Brasil', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:2,visitante:1} },
-      { local:'España', visitante:'Alemania', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:0,visitante:0} },
-    ],
-    inscritosIds:['u8','u5','u3'],
-    pronosDef:[
-      { usuarioId:'u8', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u8', partidoIdx:1, valores:{local:3,visitante:1} }, { usuarioId:'u8', partidoIdx:2, valores:{local:1,visitante:1} },
-      { usuarioId:'u5', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u5', partidoIdx:1, valores:{local:4,visitante:2} }, { usuarioId:'u5', partidoIdx:2, valores:{local:2,visitante:2} },
-      { usuarioId:'u3', partidoIdx:0, valores:{local:0,visitante:2} }, { usuarioId:'u3', partidoIdx:1, valores:{local:0,visitante:1} }, { usuarioId:'u3', partidoIdx:2, valores:{local:0,visitante:1} },
-    ]
-  });
-
-  /* ---- HISTORIAL: escenario D — NFL sala H5, día -1, empate total → reparto igualitario ---- */
-  const h5 = addSala({
-    liga:'NFL', estado:'abierta', horaPartidosBase:HOY-DIA(1),
-    partidosDef:[
-      { local:'Dallas Cowboys', visitante:'Philadelphia Eagles', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:2,visitante:1} },
-      { local:'Kansas City Chiefs', visitante:'Buffalo Bills', horaInicio:HOY-DIA(1), estado:'finalizado', resultadoFinal:{local:0,visitante:0} },
-    ],
-    inscritosIds:['u2','u7','u6'],
-    pronosDef:[
-      { usuarioId:'u2', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u2', partidoIdx:1, valores:{local:1,visitante:0} },
-      { usuarioId:'u7', partidoIdx:0, valores:{local:1,visitante:0} }, { usuarioId:'u7', partidoIdx:1, valores:{local:1,visitante:0} },
-      { usuarioId:'u6', partidoIdx:0, valores:{local:0,visitante:2} }, { usuarioId:'u6', partidoIdx:1, valores:{local:0,visitante:1} },
-    ]
-  });
-
-  return { usuarios, salas, partidos, pronosticos, inscripciones, transacciones, comisiones,
-           rolloverPools:{}, _historialSeed:{h1:h1.salaId,h2:h2.salaId,h3:h3.salaId,h4:h4.salaId,h5:h5.salaId},
-           limiteDeposito:2000, autoexcluido:false, sesionUsuarioId:'u1' };
-}
-
-/* Resuelve el historial de prueba en orden cronológico con el motor real.
-   H2 (NBA) debe heredar el rollover que generó H1 antes de resolverse — por
-   eso no se resuelve con un simple forEach, se sincroniza explícitamente. */
-function resolverHistorialSeed(){
-  const ids = DB._historialSeed;
-  resolverDiaSiCorresponde(ids.h1);
-  const salaH2 = DB.salas.find(s=>s.id===ids.h2);
-  salaH2.rolloverAnterior = DB.rolloverPools['NBA'] || 0;
-  resolverDiaSiCorresponde(ids.h2);
-  resolverDiaSiCorresponde(ids.h3);
-  resolverDiaSiCorresponde(ids.h4);
-  resolverDiaSiCorresponde(ids.h5);
-}
-
-/* ---------------------------------------------------------
-   ESTADO GLOBAL + PERSISTENCIA (localStorage del navegador —
-   funciona standalone, sin depender de ninguna plataforma)
-   --------------------------------------------------------- */
-let DB = null;
-function persist(){
-  if (!DB) return;
-  try { localStorage.setItem('quinkong_db', JSON.stringify(DB)); }
-  catch(err){ console.error('No se pudo guardar el estado en este navegador:', err); }
-}
-
-async function cargarOInicializar(){
-  try {
-    const raw = localStorage.getItem('quinkong_db');
-    if (raw) { DB = JSON.parse(raw); return; }
-  } catch(e) { /* todavía no hay datos guardados, o el navegador bloquea localStorage — sembramos */ }
-  DB = seedData();
-  resolverHistorialSeed();
-  persist();
-}
-
-function resetDemo(){
-  DB = seedData();
-  resolverHistorialSeed();
-  persist();
-  toast('Datos de demo reiniciados');
+async function recargarYRenderizar(){
+  await cargarTodo();
   render();
+}
+
+/* ---------------------------------------------------------
+   REALTIME — cualquier cambio en estas tablas (de cualquier
+   jugador, o del admin) refresca el espejo local y vuelve a pintar.
+   --------------------------------------------------------- */
+function setupRealtime(){
+  sb.channel('quinkong-cambios')
+    .on('postgres_changes', { event:'*', schema:'public', table:'salas' }, ()=> recargarYRenderizar())
+    .on('postgres_changes', { event:'*', schema:'public', table:'partidos' }, ()=> recargarYRenderizar())
+    .on('postgres_changes', { event:'*', schema:'public', table:'inscripciones' }, ()=> recargarYRenderizar())
+    .on('postgres_changes', { event:'*', schema:'public', table:'pronosticos' }, ()=> recargarYRenderizar())
+    .subscribe();
 }
 
 function usuarioActual(){ return DB.usuarios.find(u=>u.id===DB.sesionUsuarioId) || null; }
@@ -439,19 +259,13 @@ function edadDeFecha(fechaStr){
 }
 
 /* sincroniza pendiente -> en_juego según la hora real, y abierta -> en_curso de la sala */
-function actualizarEstadosPorTiempo(){
-  const ahora = Date.now();
-  let cambios = false;
-  DB.partidos.forEach(p=>{
-    if (p.estado==='pendiente' && p.horaInicio<=ahora){ p.estado='en_juego'; if(!p.marcadorEnVivo) p.marcadorEnVivo={local:0,visitante:0}; cambios=true; }
-  });
-  DB.salas.forEach(s=>{
-    if (s.estado==='abierta'){
-      const partidos = DB.partidos.filter(p=>p.salaId===s.id);
-      if (partidos.some(p=>p.estado!=='pendiente')) { s.estado='en_curso'; cambios=true; }
-    }
-  });
-  if (cambios) persist();
+function estadoVisualPartido(p){
+  if (p.estado === 'finalizado') return 'finalizado';
+  return yaInicio(p) ? 'en_juego' : 'pendiente';
+}
+function salaEstadoVisual(sala, partidosDeSala){
+  if (sala.estado === 'finalizada_pagada' || sala.estado === 'sin_ganador') return sala.estado;
+  return partidosDeSala.some(p => estadoVisualPartido(p) !== 'pendiente') ? 'en_curso' : 'abierta';
 }
 
 function toast(msg){
@@ -500,15 +314,22 @@ document.addEventListener('change', function(e){
 window.addEventListener('hashchange', render);
 
 function render(){
-  actualizarEstadosPorTiempo();
   const hash = location.hash || '#/salas';
   const app = document.getElementById('app');
   const parts = hash.replace('#/','').split('/');
   const view = parts[0] || 'salas';
   document.querySelectorAll('.navitem').forEach(b=> b.classList.toggle('active', b.dataset.route==='#/'+view));
 
+  const autenticado = !!DB.sesionUsuarioId;
+  const tengoPerfil = autenticado && DB.usuarios.some(u=>u.id===DB.sesionUsuarioId);
+
   let html = '';
-  if (view==='salas') html = renderSalas();
+  if (!autenticado && view!=='terminos' && view!=='privacidad'){
+    html = renderLogin();
+  } else if (autenticado && !tengoPerfil && view!=='terminos' && view!=='privacidad'){
+    html = renderCompletarPerfil();
+  }
+  else if (view==='salas') html = renderSalas();
   else if (view==='sala') html = renderSala(parts[1]);
   else if (view==='ranking') html = renderRanking();
   else if (view==='historial') html = renderHistorial();
@@ -549,12 +370,13 @@ function renderSalas(){
       const participantes = DB.inscripciones.filter(i=>i.salaId===s.id).length;
       const bolsa = calcularBolsa(participantes, s.rolloverAnterior);
       const inscrito = DB.inscripciones.some(i=>i.salaId===s.id && i.usuarioId===DB.sesionUsuarioId);
-      const cuentaAtras = s.estado==='abierta' ? formatCountdown(primerInicio - Date.now()) : 'en curso';
+      const ev = salaEstadoVisual(s, partidos);
+      const cuentaAtras = ev==='abierta' ? formatCountdown(primerInicio - Date.now()) : 'en curso';
       html += `
       <div class="card" data-action="ver_sala" data-sala="${s.id}" style="cursor:pointer">
         <div class="row">
-          <span class="tag" style="background:${col.bg};color:${col.text}"><i class="ti ${col.icon}" aria-hidden="true"></i>${s.estado==='abierta'?'abierta':'en curso'}</span>
-          <span class="small muted">${s.estado==='abierta' ? 'cierra en '+cuentaAtras : 'partidos en juego'}</span>
+          <span class="tag" style="background:${col.bg};color:${col.text}"><i class="ti ${col.icon}" aria-hidden="true"></i>${ev==='abierta'?'abierta':'en curso'}</span>
+          <span class="small muted">${ev==='abierta' ? 'cierra en '+cuentaAtras : 'partidos en juego'}</span>
         </div>
         <p class="mono" style="font-size:28px;margin:10px 0 2px;color:${col.text}">${money(bolsa.bolsaTotalAEntregar)}</p>
         <p class="small muted" style="margin:0">${participantes} jugadores · ${partidos.length} partidos${s.rolloverAnterior?` · +${money(s.rolloverAnterior)} acumulado`:''}</p>
@@ -577,10 +399,11 @@ function renderSala(salaId){
   const bolsa = calcularBolsa(participantes, sala.rolloverAnterior);
   const inscrito = DB.inscripciones.some(i=>i.salaId===salaId && i.usuarioId===DB.sesionUsuarioId);
   const cerrada = sala.estado==='finalizada_pagada' || sala.estado==='sin_ganador';
+  const ev = salaEstadoVisual(sala, partidos);
   const stats = statsDeSala(salaId);
 
   let html = `<div class="liga-band" style="background:${col.band}">
-    <div class="row"><span class="small" style="opacity:.85">${sala.liga} · ${cerrada? 'cerrada' : (sala.estado==='abierta'?'abierta':'en curso')}</span>
+    <div class="row"><span class="small" style="opacity:.85">${sala.liga} · ${cerrada? 'cerrada' : (ev==='abierta'?'abierta':'en curso')}</span>
     <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" data-action="reportar"><i class="ti ti-flag-3" aria-hidden="true"></i>reportar</button></div>
     <p class="liga-pot-label">fondo de premios</p>
     <p class="liga-pot">${money(bolsa.bolsaTotalAEntregar)}</p>
@@ -598,7 +421,7 @@ function renderSala(salaId){
     </div>
   </details>`;
 
-  if (!inscrito && sala.estado==='abierta'){
+  if (!inscrito && ev==='abierta'){
     html += `<button class="btn btn-primary btn-block" style="margin-top:14px" data-action="unirse_sala" data-sala="${sala.id}"><i class="ti ti-ticket" aria-hidden="true"></i>unirme por $50</button>`;
   } else if (!inscrito){
     html += `<div class="card" style="margin-top:14px"><p class="small muted" style="margin:0">Esta sala ya cerró inscripciones.</p></div>`;
@@ -646,9 +469,9 @@ function renderResultadoSala(sala, stats, bolsa, col){
       <p class="small" style="margin:0;color:${col.text}"><strong>sin ganador esta jornada.</strong> Nadie acertó ni el resultado de un solo partido. ${money(bolsa.bolsaTotalAEntregar)} se acumulan a la siguiente sala de ${sala.liga}.</p>
     </div>`;
   }
-  const ganadores = sala.resultadoDia.ganadores.map(uid=> DB.usuarios.find(u=>u.id===uid));
+  const ganadores = sala.resultadoDia.ganadores.map(uid=> DB.usuarios.find(u=>u.id===uid)).filter(Boolean);
   const criterioTxt = { puntos:'más puntos en el día', exactos:'desempate por marcadores exactos', distancia:'desempate por cercanía de marcador', reparto:'empate total — reparto igualitario' }[sala.resultadoDia.criterio] || '';
-  const monto = bolsa.bolsaTotalAEntregar / ganadores.length;
+  const monto = bolsa.bolsaTotalAEntregar / sala.resultadoDia.ganadores.length;
   return `<div class="card" style="margin-top:14px;background:${col.bg};border-color:transparent">
     <p class="small muted" style="margin:0 0 6px">${criterioTxt}</p>
     ${ganadores.map(g=>`<div class="row" style="padding:4px 0"><div style="display:flex;align-items:center;gap:8px"><div class="avatar" style="background:${avatarColor(g.nombre)}">${initials(g.nombre)}</div><strong class="small">${g.nombre}</strong></div><strong class="mono small" style="color:${col.text}">${money(monto)}</strong></div>`).join('')}
@@ -656,8 +479,9 @@ function renderResultadoSala(sala, stats, bolsa, col){
 }
 
 function renderPartidoCard(sala, p, inscrito, col){
-  const estadoTag = { pendiente:['programado','muted'], en_juego:['en vivo','danger'], finalizado:['finalizado','muted'] }[p.estado];
-  const horaTxt = p.estado==='pendiente' ? fmtFecha(p.horaInicio) : null;
+  const ev = estadoVisualPartido(p);
+  const estadoTag = { pendiente:['programado','muted'], en_juego:['en vivo','danger'], finalizado:['finalizado','muted'] }[ev];
+  const horaTxt = ev==='pendiente' ? fmtFecha(p.horaInicio) : null;
   const marcador = p.estado==='finalizado' ? p.resultadoFinal : (p.marcadorEnVivo || {local:0,visitante:0});
   const miPronostico = DB.pronosticos.find(pr=>pr.salaId===sala.id && pr.partidoId===p.id && pr.usuarioId===DB.sesionUsuarioId);
   const otros = DB.pronosticos.filter(pr=>pr.salaId===sala.id && pr.partidoId===p.id && pr.usuarioId!==DB.sesionUsuarioId)
@@ -666,12 +490,12 @@ function renderPartidoCard(sala, p, inscrito, col){
   let html = `<div class="card">
     <div class="row">
       <div style="display:flex;align-items:center;gap:8px"><div class="avatar" style="background:${col.band}">${initials(p.equipoLocal)}</div><span class="small">${p.equipoLocal}</span></div>
-      <span class="tag ${p.estado==='en_juego'?'mono':''}" style="background:${p.estado==='en_juego'?'var(--red-bg)':'var(--paper)'};color:${p.estado==='en_juego'?'var(--red)':'var(--muted)'}">${p.estado==='en_juego'?'● ':''}${estadoTag[0]}</span>
+      <span class="tag ${ev==='en_juego'?'mono':''}" style="background:${ev==='en_juego'?'var(--red-bg)':'var(--paper)'};color:${ev==='en_juego'?'var(--red)':'var(--muted)'}">${ev==='en_juego'?'● ':''}${estadoTag[0]}</span>
       <div style="display:flex;align-items:center;gap:8px"><span class="small">${p.equipoVisitante}</span><div class="avatar" style="background:${col.dark}">${initials(p.equipoVisitante)}</div></div>
     </div>
-    <p class="mono" style="text-align:center;font-size:22px;margin:10px 0">${ p.estado==='pendiente' ? horaTxt : (marcador.local+' — '+marcador.visitante) }</p>`;
+    <p class="mono" style="text-align:center;font-size:22px;margin:10px 0">${ ev==='pendiente' ? horaTxt : (marcador.local+' — '+marcador.visitante) }</p>`;
 
-  if (p.estado==='pendiente' && inscrito){
+  if (ev==='pendiente' && inscrito){
     const vl = miPronostico? miPronostico.valores.local : 0;
     const vv = miPronostico? miPronostico.valores.visitante : 0;
     html += `<div class="row" style="gap:10px;border-top:1px solid var(--line);padding-top:10px">
@@ -683,7 +507,7 @@ function renderPartidoCard(sala, p, inscrito, col){
         <button class="btn btn-primary" data-action="confirmar_pronostico" data-partido="${p.id}" data-sala="${sala.id}">${miPronostico?'editar':'guardar'}</button>
       </div>
     </div>`;
-  } else if (p.estado==='pendiente' && !inscrito){
+  } else if (ev==='pendiente' && !inscrito){
     html += `<p class="small muted" style="text-align:center;margin:0">únete a la sala para pronosticar este partido</p>`;
   } else if (miPronostico){
     const pts = p.estado==='finalizado' ? puntosDe(miPronostico.valores, p.resultadoFinal) : null;
@@ -712,28 +536,42 @@ function renderPartidoCard(sala, p, inscrito, col){
    VISTA: login / registro simulado, con verificación de edad real
    --------------------------------------------------------- */
 function renderLogin(){
-  let html = `<div style="padding:30px 0 10px;text-align:center">
+  return `<div style="padding:30px 0 10px;text-align:center">
     <h2 style="font-size:22px">entrar a QuinKong</h2>
-    <p class="small muted">elige tu usuario de demo o regístrate</p>
+    <p class="small muted">inicia sesión o crea tu cuenta</p>
   </div>
-  <div class="card" style="padding:8px;overflow:hidden">`;
-  DB.usuarios.filter(u=>u.rol==='jugador').forEach((u,i)=>{
-    html += `<button class="btn btn-block" style="border:none;justify-content:flex-start;padding:12px;${i>0?'border-top:1px solid var(--line)':''};border-radius:0" data-action="login" data-usuario="${u.id}">
-      <div class="avatar" style="background:${avatarColor(u.nombre)}">${initials(u.nombre)}</div>
-      <span style="margin-left:10px">${u.nombre}</span>
-    </button>`;
-  });
-  html += `</div>
+
+  <div class="card">
+    <div class="field"><label>correo</label><input id="login-email" type="email" placeholder="tu@correo.com"></div>
+    <div class="field"><label>contraseña</label><input id="login-password" type="password" placeholder="••••••••"></div>
+    <button class="btn btn-primary btn-block" data-action="login">iniciar sesión</button>
+  </div>
 
   <div class="section-title">¿nuevo aquí?</div>
   <div class="card">
     <div class="field"><label>nombre completo</label><input id="reg-nombre" placeholder="Tu nombre"></div>
     <div class="field"><label>usuario</label><input id="reg-usuario" placeholder="usuario"></div>
     <div class="field"><label>fecha de nacimiento</label><input id="reg-fecha" type="date"></div>
+    <div class="field"><label>correo</label><input id="reg-email" type="email" placeholder="tu@correo.com"></div>
+    <div class="field"><label>contraseña</label><input id="reg-password" type="password" placeholder="mínimo 6 caracteres"></div>
     <p class="small muted">verificamos tu edad con esta fecha — debes ser mayor de 18 años para jugar.</p>
     <button class="btn btn-primary btn-block" data-action="registro">crear cuenta</button>
   </div>`;
-  return html;
+}
+
+function renderCompletarPerfil(){
+  return `<div style="padding:30px 0 10px;text-align:center">
+    <h2 style="font-size:22px">un último paso</h2>
+    <p class="small muted">ya verificamos tu correo — completa tu perfil para jugar</p>
+  </div>
+  <div class="card">
+    <div class="field"><label>nombre completo</label><input id="reg-nombre" placeholder="Tu nombre"></div>
+    <div class="field"><label>usuario</label><input id="reg-usuario" placeholder="usuario"></div>
+    <div class="field"><label>fecha de nacimiento</label><input id="reg-fecha" type="date"></div>
+    <p class="small muted">debes ser mayor de 18 años para jugar.</p>
+    <button class="btn btn-primary btn-block" data-action="completar_perfil">guardar y continuar</button>
+  </div>
+  <button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="cerrar_sesion">cerrar sesión</button>`;
 }
 
 const TERMINOS_TXT = `Estos son los términos y condiciones de uso de QuinKong (contenido de referencia para el MVP).
@@ -866,7 +704,7 @@ function renderHistorial(){
       html += `<p class="small muted" style="margin:10px 0 0"><strong style="color:var(--ink)">sin ganador — acumulada.</strong> ${money(bolsa.bolsaTotalAEntregar)} pasan a la siguiente sala de ${s.liga}.</p>`;
     } else {
       const ganadores = s.resultadoDia.ganadores.map(uid=>DB.usuarios.find(u=>u.id===uid)).filter(Boolean);
-      const monto = bolsa.bolsaTotalAEntregar / ganadores.length;
+      const monto = bolsa.bolsaTotalAEntregar / s.resultadoDia.ganadores.length;
       const criterioTxt = { puntos:'ganador único por puntos', exactos:'desempate por marcadores exactos', distancia:'desempate por cercanía de marcador', reparto:'reparto igualitario por empate total' }[s.resultadoDia.criterio] || '';
       html += `<p class="small muted" style="margin:10px 0 4px">${criterioTxt} · bolsa ${money(bolsa.bolsaTotalAEntregar)}</p>`;
       ganadores.forEach(g=> html += `<div class="row" style="padding:3px 0"><span class="small">${g.nombre}</span><span class="mono small" style="color:${col.text}">${money(monto)}</span></div>`);
@@ -894,13 +732,13 @@ function renderWallet(){
 
   <div class="section-title">juego responsable</div>
   <div class="card">
-    <div class="row"><span class="small">límite de depósito mensual</span><span class="mono small">${money(DB.limiteDeposito)}</span></div>
+    <div class="row"><span class="small">límite de depósito mensual</span><span class="mono small">${money(DB.miWallet.limiteDeposito)}</span></div>
     <button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="cambiar_limite">cambiar límite</button>
     <div class="row" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
       <span class="small">autoexclusión</span>
-      <button class="btn ${DB.autoexcluido?'btn-danger':'btn-secondary'}" data-action="toggle_autoexclusion">${DB.autoexcluido?'desactivar':'activar'}</button>
+      <button class="btn ${DB.miWallet.autoexcluido?'btn-danger':'btn-secondary'}" data-action="toggle_autoexclusion">${DB.miWallet.autoexcluido?'desactivar':'activar'}</button>
     </div>
-    ${DB.autoexcluido? '<p class="small" style="color:var(--red);margin:8px 0 0">tienes la autoexclusión activada: no puedes unirte a nuevas salas ni depositar.</p>':''}
+    ${DB.miWallet.autoexcluido? '<p class="small" style="color:var(--red);margin:8px 0 0">tienes la autoexclusión activada: no puedes unirte a nuevas salas ni depositar.</p>':''}
   </div>
 
   <div class="section-title">historial de transacciones</div>
@@ -936,7 +774,6 @@ function renderPerfil(){
     <button class="btn btn-block" style="border:none;border-radius:0;justify-content:flex-start;padding:14px;border-top:1px solid var(--line)" data-action="reportar"><i class="ti ti-flag-3" aria-hidden="true"></i>reportar un problema</button>
   </div>
   <button class="btn btn-secondary btn-block" style="margin-top:14px" data-action="cerrar_sesion">cerrar sesión</button>
-  <button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="reset_demo">reiniciar datos de demo</button>
   `;
   return html;
 }
@@ -946,14 +783,25 @@ function renderPerfil(){
    --------------------------------------------------------- */
 function handleChange(action, el){ /* reservado para futuros controles con data-onchange */ }
 
-function handleAction(action, el){
+async function llamarAdminApi(action, payload){
+  const token = await obtenerToken();
+  if (!token) return { error:'No autenticado' };
+  const resp = await fetch(EDGE_FUNCTION_URL, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+token },
+    body: JSON.stringify({ action, payload }),
+  });
+  return resp.json();
+}
+
+async function handleAction(action, el){
   const ds = el.dataset;
+  try {
 
   if (action==='ir'){ location.hash = ds.route; return; }
   if (action==='ver_sala'){ location.hash = '#/sala/'+ds.sala; return; }
   if (action==='cerrar_modal'){ closeModal(); return; }
   if (action==='reportar'){ toast('Gracias, reportamos esto al equipo (simulado).'); return; }
-  if (action==='reset_demo'){ resetDemo(); return; }
 
   /* ---- unirse a sala ---- */
   if (action==='unirse_sala'){
@@ -967,14 +815,11 @@ function handleAction(action, el){
     return;
   }
   if (action==='confirmar_union'){
-    const salaId = ds.sala; const u = usuarioActual();
-    if (!u){ closeModal(); location.hash='#/login'; return; }
-    if (DB.autoexcluido){ toast('Tienes la autoexclusión activada — no puedes unirte a salas.'); closeModal(); return; }
-    if (u.saldo < 50){ toast('Saldo insuficiente. Deposita primero en tu wallet.'); closeModal(); return; }
-    u.saldo -= 50;
-    DB.inscripciones.push({ id:uid('insc'), salaId, usuarioId:u.id, fecha:Date.now() });
-    DB.transacciones.push({ id:uid('tx'), usuarioId:u.id, tipo:'entrada', monto:50, fecha:Date.now(), salaId });
-    persist(); closeModal(); render(); toast('¡Estás dentro! Ya puedes pronosticar.');
+    const { error } = await sb.rpc('unirse_sala', { p_sala_id: ds.sala });
+    closeModal();
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    toast('¡Estás dentro! Ya puedes pronosticar.');
     return;
   }
 
@@ -993,15 +838,16 @@ function handleAction(action, el){
     return;
   }
   if (action==='guardar_pronostico'){
-    const partidoId = ds.partido, salaId = ds.sala, vl = parseInt(ds.local,10), vv = parseInt(ds.visit,10);
-    const partido = DB.partidos.find(p=>p.id===partidoId);
     const u = usuarioActual();
-    if (!partido || !u){ closeModal(); return; }
-    if (partido.estado!=='pendiente'){ toast('Este partido ya inició — el pronóstico queda bloqueado.'); closeModal(); render(); return; }
-    let prono = DB.pronosticos.find(pr=>pr.partidoId===partidoId && pr.usuarioId===u.id);
-    if (prono){ prono.valores = {local:vl, visitante:vv}; prono.fecha = Date.now(); }
-    else { DB.pronosticos.push({ id:uid('prono'), salaId, partidoId, usuarioId:u.id, valores:{local:vl, visitante:vv}, fecha:Date.now() }); }
-    persist(); closeModal(); render(); toast('Pronóstico guardado.');
+    if (!u){ closeModal(); return; }
+    const { error } = await sb.from('pronosticos').upsert(
+      { sala_id: ds.sala, partido_id: ds.partido, usuario_id: u.id, local: parseInt(ds.local,10), visitante: parseInt(ds.visit,10) },
+      { onConflict: 'partido_id,usuario_id' }
+    );
+    closeModal();
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    toast('Pronóstico guardado.');
     return;
   }
 
@@ -1009,7 +855,7 @@ function handleAction(action, el){
   if (action==='depositar'){
     showModal(`<h3>depositar</h3>
       <div class="field" style="margin-top:12px"><label>monto</label><input type="number" min="1" id="modal-monto" placeholder="$"></div>
-      <p class="small muted">límite mensual: ${money(DB.limiteDeposito)}</p>
+      <p class="small muted">límite mensual: ${money(DB.miWallet.limiteDeposito)}</p>
       <div class="row" style="gap:8px;margin-top:10px">
         <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
         <button class="btn btn-primary btn-block" data-action="confirmar_deposito">depositar</button>
@@ -1017,13 +863,13 @@ function handleAction(action, el){
     return;
   }
   if (action==='confirmar_deposito'){
-    const u = usuarioActual(); const monto = parseFloat(document.getElementById('modal-monto').value);
-    if (DB.autoexcluido){ toast('Tienes la autoexclusión activada — no puedes depositar.'); closeModal(); return; }
+    const monto = parseFloat(document.getElementById('modal-monto').value);
     if (isNaN(monto) || monto<=0){ toast('Ingresa un monto válido.'); return; }
-    if (monto > DB.limiteDeposito){ toast('Ese monto supera tu límite mensual de '+money(DB.limiteDeposito)+'.'); return; }
-    u.saldo += monto;
-    DB.transacciones.push({ id:uid('tx'), usuarioId:u.id, tipo:'deposito', monto, fecha:Date.now(), salaId:null });
-    persist(); closeModal(); render(); toast('Depósito simulado por '+money(monto)+'.');
+    const { error } = await sb.rpc('depositar', { p_monto: monto });
+    closeModal();
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    toast('Depósito por '+money(monto)+'.');
     return;
   }
   if (action==='retirar'){
@@ -1036,17 +882,18 @@ function handleAction(action, el){
     return;
   }
   if (action==='confirmar_retiro'){
-    const u = usuarioActual(); const monto = parseFloat(document.getElementById('modal-monto').value);
+    const monto = parseFloat(document.getElementById('modal-monto').value);
     if (isNaN(monto) || monto<=0){ toast('Ingresa un monto válido.'); return; }
-    if (monto > u.saldo){ toast('No tienes saldo suficiente.'); return; }
-    u.saldo -= monto;
-    DB.transacciones.push({ id:uid('tx'), usuarioId:u.id, tipo:'retiro', monto, fecha:Date.now(), salaId:null });
-    persist(); closeModal(); render(); toast('Retiro simulado por '+money(monto)+'.');
+    const { error } = await sb.rpc('retirar', { p_monto: monto });
+    closeModal();
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    toast('Retiro por '+money(monto)+'.');
     return;
   }
   if (action==='cambiar_limite'){
     showModal(`<h3>límite de depósito mensual</h3>
-      <div class="field" style="margin-top:12px"><label>nuevo límite</label><input type="number" min="1" id="modal-monto" value="${DB.limiteDeposito}"></div>
+      <div class="field" style="margin-top:12px"><label>nuevo límite</label><input type="number" min="1" id="modal-monto" value="${DB.miWallet.limiteDeposito}"></div>
       <div class="row" style="gap:8px;margin-top:10px">
         <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
         <button class="btn btn-primary btn-block" data-action="confirmar_limite">guardar</button>
@@ -1056,54 +903,90 @@ function handleAction(action, el){
   if (action==='confirmar_limite'){
     const monto = parseFloat(document.getElementById('modal-monto').value);
     if (isNaN(monto) || monto<=0){ toast('Ingresa un monto válido.'); return; }
-    DB.limiteDeposito = monto; persist(); closeModal(); render(); toast('Límite actualizado.');
+    const { error } = await sb.rpc('cambiar_limite_deposito', { p_limite: monto });
+    closeModal();
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    toast('Límite actualizado.');
     return;
   }
   if (action==='toggle_autoexclusion'){
-    DB.autoexcluido = !DB.autoexcluido; persist(); render();
-    toast(DB.autoexcluido ? 'Autoexclusión activada.' : 'Autoexclusión desactivada.');
+    const nuevo = !DB.miWallet.autoexcluido;
+    const { error } = await sb.rpc('toggle_autoexclusion', { p_valor: nuevo });
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    toast(nuevo ? 'Autoexclusión activada.' : 'Autoexclusión desactivada.');
     return;
   }
 
   /* ---- login / registro ---- */
   if (action==='login'){
-    DB.sesionUsuarioId = ds.usuario; persist();
-    const u = usuarioActual();
-    location.hash = '#/salas'; toast('Hola, '+(u?u.nombre:'')+'.');
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    if (!email || !password){ toast('Completa correo y contraseña.'); return; }
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error){ toast(error.message); return; }
+    DB.sesionUsuarioId = data.user.id;
+    location.hash = '#/salas';
     return;
   }
   if (action==='registro'){
     const nombre = document.getElementById('reg-nombre').value.trim();
     const usuario = document.getElementById('reg-usuario').value.trim();
     const fecha = document.getElementById('reg-fecha').value;
-    if (!nombre || !usuario || !fecha){ toast('Completa nombre, usuario y fecha de nacimiento.'); return; }
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+    if (!nombre || !usuario || !fecha || !email || !password){ toast('Completa todos los campos.'); return; }
     if (edadDeFecha(fecha) < 18){ toast('Debes ser mayor de 18 años para registrarte en QuinKong.'); return; }
-    const nuevo = { id:uid('u'), nombre, usuario, saldo:500, fechaNacimiento:fecha, rol:'jugador' };
-    DB.usuarios.push(nuevo); DB.sesionUsuarioId = nuevo.id; persist();
-    location.hash = '#/salas'; toast('Cuenta creada — bienvenido, '+nombre+'.');
+    const { data, error } = await sb.auth.signUp({ email, password });
+    if (error){ toast(error.message); return; }
+    if (!data.session){ toast('Revisa tu correo para confirmar tu cuenta y luego inicia sesión.'); return; }
+    DB.sesionUsuarioId = data.user.id;
+    const { error: perfilError } = await sb.from('profiles').insert({ id:data.user.id, nombre, usuario, fecha_nacimiento:fecha });
+    if (perfilError){ toast(perfilError.message); return; }
+    await recargarYRenderizar();
+    location.hash = '#/salas';
+    toast('Cuenta creada — bienvenido, '+nombre+'.');
     return;
   }
-  if (action==='cerrar_sesion'){ DB.sesionUsuarioId = null; persist(); location.hash = '#/login'; return; }
+  if (action==='completar_perfil'){
+    const nombre = document.getElementById('reg-nombre').value.trim();
+    const usuario = document.getElementById('reg-usuario').value.trim();
+    const fecha = document.getElementById('reg-fecha').value;
+    if (!nombre || !usuario || !fecha){ toast('Completa todos los campos.'); return; }
+    if (edadDeFecha(fecha) < 18){ toast('Debes ser mayor de 18 años para jugar en QuinKong.'); return; }
+    const { error } = await sb.from('profiles').insert({ id:DB.sesionUsuarioId, nombre, usuario, fecha_nacimiento:fecha });
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    location.hash = '#/salas';
+    toast('Perfil completo — bienvenido, '+nombre+'.');
+    return;
+  }
+  if (action==='cerrar_sesion'){
+    await sb.auth.signOut();
+    location.hash = '#/login';
+    return;
+  }
 
   /* ---- admin ---- */
   if (action==='admin_crear_sala'){
     const liga = document.getElementById('admin-liga').value;
-    const rollover = DB.rolloverPools[liga] || 0;
-    DB.salas.push({ id:uid('sala'), liga, cuotaEntrada:50, estado:'abierta', rolloverAnterior: rollover, resultadoDia:null, fechaResolucion:null });
-    DB.rolloverPools[liga] = 0;
-    persist(); render(); toast('Sala de '+liga+' creada.');
+    const res = await llamarAdminApi('crear_sala', { liga });
+    if (res.error){ toast(res.error); return; }
+    await recargarYRenderizar();
+    toast('Sala de '+liga+' creada.');
     return;
   }
   if (action==='admin_agregar_partido'){
     const salaId = ds.sala;
-    const local = document.getElementById('np-local-'+salaId).value.trim();
-    const visit = document.getElementById('np-visit-'+salaId).value.trim();
+    const equipo_local = document.getElementById('np-local-'+salaId).value.trim();
+    const equipo_visitante = document.getElementById('np-visit-'+salaId).value.trim();
     const horaStr = document.getElementById('np-hora-'+salaId).value;
-    if (!local || !visit || !horaStr){ toast('Completa equipo local, visitante y hora.'); return; }
-    const sala = DB.salas.find(s=>s.id===salaId);
-    if (sala.estado==='finalizada_pagada' || sala.estado==='sin_ganador'){ toast('Esta sala ya está cerrada.'); return; }
-    DB.partidos.push({ id:uid('partido'), salaId, equipoLocal:local, equipoVisitante:visit, horaInicio:new Date(horaStr).getTime(), estado:'pendiente', resultadoFinal:null, marcadorEnVivo:null });
-    persist(); render(); toast('Partido agregado.');
+    if (!equipo_local || !equipo_visitante || !horaStr){ toast('Completa equipo local, visitante y hora.'); return; }
+    const res = await llamarAdminApi('agregar_partido', { sala_id:salaId, equipo_local, equipo_visitante, hora_inicio:new Date(horaStr).toISOString() });
+    if (res.error){ toast(res.error); return; }
+    await recargarYRenderizar();
+    toast('Partido agregado.');
     return;
   }
   if (action==='admin_capturar_resultado'){
@@ -1111,19 +994,30 @@ function handleAction(action, el){
     const rl = parseInt(document.getElementById('res-local-'+partidoId).value, 10);
     const rv = parseInt(document.getElementById('res-visit-'+partidoId).value, 10);
     if (isNaN(rl) || isNaN(rv) || rl<0 || rv<0){ toast('Ingresa un resultado válido.'); return; }
-    resolverPartido(partidoId, {local:rl, visitante:rv});
-    render(); toast('Resultado capturado — el motor resolvió la jornada si correspondía.');
+    const res = await llamarAdminApi('capturar_resultado', { partido_id:partidoId, local:rl, visitante:rv });
+    if (res.error){ toast(res.error); return; }
+    await recargarYRenderizar();
+    toast('Resultado capturado — el motor resolvió la jornada si correspondía.');
     return;
+  }
+
+  } catch(err){
+    console.error(err);
+    toast('Algo salió mal: ' + (err && err.message ? err.message : err));
   }
 }
 
 /* ---------------------------------------------------------
-   ARRANQUE
+   ARRANQUE — la sesión real de Supabase manda; cargarTodo()
+   se repite solo cuando cambia la sesión o llega un evento Realtime.
    --------------------------------------------------------- */
-async function init(){
-  await cargarOInicializar();
-  render();
-  setInterval(()=>{ actualizarEstadosPorTiempo(); render(); }, 20000);
+function init(){
+  setupRealtime();
+  sb.auth.onAuthStateChange((_event, session)=>{
+    DB.sesionUsuarioId = session ? session.user.id : null;
+    recargarYRenderizar();
+  });
+  setInterval(render, 20000);
 }
 init();
 </script>
