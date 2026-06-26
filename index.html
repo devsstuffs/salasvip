@@ -80,7 +80,7 @@
 <body>
 <div class="topbar">
   <div class="brand"><span class="dot"></span>QuinKong</div>
-  <button class="iconbtn" id="btn-profile" aria-label="Perfil"><i class="ti ti-user"></i></button>
+  <button class="iconbtn" id="btn-profile" aria-label="Perfil" style="background:var(--teal);border-color:var(--teal);color:#fff"><i class="ti ti-user"></i></button>
 </div>
 <div id="app"></div>
 <nav class="bottomnav">
@@ -117,6 +117,14 @@ function avatarColor(seedStr){
   return AVATAR_COLORS[Math.abs(h)];
 }
 function initials(nombre){ return nombre.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase(); }
+function escudoHtml(url, bgFallback, nombre){
+  const ini = initials(nombre);
+  if (!url) return `<div class="avatar" style="background:${bgFallback}">${ini}</div>`;
+  return `<span style="position:relative;display:inline-block;width:28px;height:28px;flex-shrink:0">
+    <img src="${url}" alt="${nombre}" style="width:28px;height:28px;border-radius:50%;object-fit:contain;background:#fff;border:1px solid var(--line)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="avatar" style="background:${bgFallback};display:none;position:absolute;top:0;left:0">${ini}</div>
+  </span>`;
+}
 function money(n){ return '$' + Math.round(n).toLocaleString('es-MX'); }
 function fmtFecha(ts){ const d=new Date(ts); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
 
@@ -131,13 +139,14 @@ function puntosDe(pronostico, resultado){
   return 0;
 }
 function distanciaDe(pronostico, resultado){ return Math.abs(pronostico.local-resultado.local) + Math.abs(pronostico.visitante-resultado.visitante); }
-function calcularBolsa(participantes, rolloverAnterior){
-  const totalRecaudado = participantes * 50;
+function calcularBolsa(participantes, cuotaEntrada, rolloverAnterior){
+  const totalRecaudado = participantes * cuotaEntrada;
   const comisionCasa = totalRecaudado * 0.16;
   const bolsaPremiosNeta = totalRecaudado - comisionCasa;
   const bolsaTotalAEntregar = bolsaPremiosNeta + (rolloverAnterior||0);
   return { participantes, totalRecaudado, comisionCasa, bolsaPremiosNeta, bolsaTotalAEntregar };
 }
+const CUOTAS = [50, 100, 200];
 
 function statsDeSala(salaId){
   const inscritos = DB.inscripciones.filter(i=>i.salaId===salaId);
@@ -166,12 +175,13 @@ function statsDeSala(salaId){
    etc. casi no cambiaron respecto al MVP en memoria.
    --------------------------------------------------------- */
 function mapSala(r){
-  return { id:r.id, liga:r.liga, cuotaEntrada:r.cuota_entrada, estado:r.estado,
+  return { id:r.id, liga:r.liga, cuotaEntrada:r.cuota_entrada, estado:r.estado, fecha:r.fecha,
     rolloverAnterior:r.rollover_anterior, resultadoDia:r.resultado_dia,
     fechaResolucion: r.fecha_resolucion ? new Date(r.fecha_resolucion).getTime() : null };
 }
 function mapPartido(r){
   return { id:r.id, salaId:r.sala_id, equipoLocal:r.equipo_local, equipoVisitante:r.equipo_visitante,
+    escudoLocal:r.escudo_local, escudoVisitante:r.escudo_visitante,
     horaInicio: new Date(r.hora_inicio).getTime(), estado:r.estado,
     resultadoFinal:r.resultado_final, marcadorEnVivo:r.marcador_en_vivo };
 }
@@ -179,6 +189,7 @@ function mapInscripcion(r){ return { id:r.id, salaId:r.sala_id, usuarioId:r.usua
 function mapPronostico(r){ return { id:r.id, salaId:r.sala_id, partidoId:r.partido_id, usuarioId:r.usuario_id, valores:{local:r.local, visitante:r.visitante}, fecha:new Date(r.fecha).getTime() }; }
 function mapTransaccion(r){ return { id:r.id, usuarioId:r.usuario_id, tipo:r.tipo, monto:r.monto, salaId:r.sala_id, fecha:new Date(r.fecha).getTime() }; }
 function mapComision(r){ return { id:r.id, salaId:r.sala_id, monto:r.monto, fecha:new Date(r.fecha).getTime() }; }
+function mapReporte(r){ return { id:r.id, usuarioId:r.usuario_id, contexto:r.contexto, mensaje:r.mensaje, fecha:new Date(r.fecha).getTime(), resuelto:r.resuelto }; }
 function mapPerfil(r){ return { id:r.id, nombre:r.nombre, usuario:r.usuario, fechaNacimiento:r.fecha_nacimiento, rol:r.rol }; }
 
 /* ---------------------------------------------------------
@@ -187,7 +198,7 @@ function mapPerfil(r){ return { id:r.id, nombre:r.nombre, usuario:r.usuario, fec
    tras cada acción y cada evento de Realtime.
    --------------------------------------------------------- */
 let DB = {
-  usuarios:[], salas:[], partidos:[], inscripciones:[], pronosticos:[], transacciones:[], comisiones:[],
+  usuarios:[], salas:[], partidos:[], inscripciones:[], pronosticos:[], transacciones:[], comisiones:[], reportes:[],
   sesionUsuarioId:null, miWallet:{ saldo:0, limiteDeposito:2000, autoexcluido:false },
 };
 
@@ -202,7 +213,7 @@ async function obtenerToken(){
    salas, no millones) es más simple y más seguro que sincronizar fila
    por fila — RLS decide qué llega de cada tabla según quién pregunta. */
 async function cargarTodo(){
-  const [salasR, partidosR, inscR, pronR, perfilesR, txR, comR] = await Promise.all([
+  const [salasR, partidosR, inscR, pronR, perfilesR, txR, comR, repR] = await Promise.all([
     sb.from('salas').select('*').order('created_at', { ascending:true }),
     sb.from('partidos').select('*'),
     sb.from('inscripciones').select('*'),
@@ -210,6 +221,7 @@ async function cargarTodo(){
     sb.from('profiles').select('*'),
     sb.from('transacciones').select('*'),
     sb.from('comisiones').select('*'),
+    sb.from('reportes').select('*').order('fecha', { ascending:false }),
   ]);
 
   DB.salas = (salasR.data || []).map(mapSala);
@@ -219,6 +231,7 @@ async function cargarTodo(){
   DB.usuarios = (perfilesR.data || []).map(mapPerfil);
   DB.transacciones = (txR.data || []).map(mapTransaccion);
   DB.comisiones = (comR.data || []).map(mapComision);
+  DB.reportes = (repR.data || []).map(mapReporte);
 
   if (DB.sesionUsuarioId){
     const { data: walletRow } = await sb.from('wallets').select('*').eq('usuario_id', DB.sesionUsuarioId).maybeSingle();
@@ -369,11 +382,11 @@ function renderSalas(){
   Object.keys(porLiga).forEach(liga=>{
     const col = LIGA_COLORS[liga] || LIGA_COLORS['Mundial FIFA 2026'];
     html += `<div class="section-title">${liga}</div>`;
-    porLiga[liga].forEach(s=>{
+    porLiga[liga].sort((a,b)=> a.cuotaEntrada-b.cuotaEntrada).forEach(s=>{
       const partidos = DB.partidos.filter(p=>p.salaId===s.id).sort((a,b)=>a.horaInicio-b.horaInicio);
       const primerInicio = partidos.length? Math.min(...partidos.map(p=>p.horaInicio)) : 0;
       const participantes = DB.inscripciones.filter(i=>i.salaId===s.id).length;
-      const bolsa = calcularBolsa(participantes, s.rolloverAnterior);
+      const bolsa = calcularBolsa(participantes, s.cuotaEntrada, s.rolloverAnterior);
       const inscrito = DB.inscripciones.some(i=>i.salaId===s.id && i.usuarioId===DB.sesionUsuarioId);
       const ev = salaEstadoVisual(s, partidos);
       const cuentaAtras = ev==='abierta' ? formatCountdown(primerInicio - Date.now()) : 'en curso';
@@ -381,8 +394,9 @@ function renderSalas(){
       <div class="card" data-action="ver_sala" data-sala="${s.id}" style="cursor:pointer">
         <div class="row">
           <span class="tag" style="background:${col.bg};color:${col.text}"><i class="ti ${col.icon}" aria-hidden="true"></i>${ev==='abierta'?'abierta':'en curso'}</span>
-          <span class="small muted">${ev==='abierta' ? 'cierra en '+cuentaAtras : 'partidos en juego'}</span>
+          <span class="tag mono" style="background:var(--paper);color:var(--ink);font-weight:600">entrada ${money(s.cuotaEntrada)}</span>
         </div>
+        <div class="row" style="margin-top:4px"><span class="small muted">${ev==='abierta' ? 'cierra en '+cuentaAtras : 'partidos en juego'}</span></div>
         <p class="mono" style="font-size:28px;margin:10px 0 2px;color:${col.text}">${money(bolsa.bolsaTotalAEntregar)}</p>
         <p class="small muted" style="margin:0">${participantes} jugadores · ${partidos.length} partidos${s.rolloverAnterior?` · +${money(s.rolloverAnterior)} acumulado`:''}</p>
         ${inscrito ? '<p class="small" style="color:'+col.text+';margin:8px 0 0">ya estás inscrito</p>' : ''}
@@ -401,14 +415,14 @@ function renderSala(salaId){
   const col = LIGA_COLORS[sala.liga] || LIGA_COLORS['Mundial FIFA 2026'];
   const partidos = DB.partidos.filter(p=>p.salaId===salaId).sort((a,b)=>a.horaInicio-b.horaInicio);
   const participantes = DB.inscripciones.filter(i=>i.salaId===salaId).length;
-  const bolsa = calcularBolsa(participantes, sala.rolloverAnterior);
+  const bolsa = calcularBolsa(participantes, sala.cuotaEntrada, sala.rolloverAnterior);
   const inscrito = DB.inscripciones.some(i=>i.salaId===salaId && i.usuarioId===DB.sesionUsuarioId);
   const cerrada = sala.estado==='finalizada_pagada' || sala.estado==='sin_ganador';
   const ev = salaEstadoVisual(sala, partidos);
   const stats = statsDeSala(salaId);
 
   let html = `<div class="liga-band" style="background:${col.band}">
-    <div class="row"><span class="small" style="opacity:.85">${sala.liga} · ${cerrada? 'cerrada' : (ev==='abierta'?'abierta':'en curso')}</span>
+    <div class="row"><span class="small" style="opacity:.85">${sala.liga} · entrada ${money(sala.cuotaEntrada)} · ${cerrada? 'cerrada' : (ev==='abierta'?'abierta':'en curso')}</span>
     <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" data-action="reportar"><i class="ti ti-flag-3" aria-hidden="true"></i>reportar</button></div>
     <p class="liga-pot-label">fondo de premios</p>
     <p class="liga-pot">${money(bolsa.bolsaTotalAEntregar)}</p>
@@ -418,7 +432,7 @@ function renderSala(salaId){
   html += `<details class="card" style="margin-top:14px">
     <summary class="small" style="color:${col.text}">ver desglose del pozo</summary>
     <div class="small muted" style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
-      <div class="row"><span>Recaudado (${participantes} × $50)</span><span class="mono">${money(bolsa.totalRecaudado)}</span></div>
+      <div class="row"><span>Recaudado (${participantes} × ${money(sala.cuotaEntrada)})</span><span class="mono">${money(bolsa.totalRecaudado)}</span></div>
       <div class="row"><span>Comisión casa (16%)</span><span class="mono">-${money(bolsa.comisionCasa)}</span></div>
       <div class="row"><span>Fondo neto</span><span class="mono">${money(bolsa.bolsaPremiosNeta)}</span></div>
       ${sala.rolloverAnterior?`<div class="row"><span>Acumulado jornadas anteriores</span><span class="mono">+${money(sala.rolloverAnterior)}</span></div>`:''}
@@ -427,7 +441,7 @@ function renderSala(salaId){
   </details>`;
 
   if (!inscrito && ev==='abierta'){
-    html += `<button class="btn btn-primary btn-block" style="margin-top:14px" data-action="unirse_sala" data-sala="${sala.id}"><i class="ti ti-ticket" aria-hidden="true"></i>unirme por $50</button>`;
+    html += `<button class="btn btn-primary btn-block" style="margin-top:14px" data-action="unirse_sala" data-sala="${sala.id}"><i class="ti ti-ticket" aria-hidden="true"></i>unirme por ${money(sala.cuotaEntrada)}</button>`;
   } else if (!inscrito){
     html += `<div class="card" style="margin-top:14px"><p class="small muted" style="margin:0">Esta sala ya cerró inscripciones.</p></div>`;
   }
@@ -494,9 +508,9 @@ function renderPartidoCard(sala, p, inscrito, col){
 
   let html = `<div class="card">
     <div class="row">
-      <div style="display:flex;align-items:center;gap:8px"><div class="avatar" style="background:${col.band}">${initials(p.equipoLocal)}</div><span class="small">${p.equipoLocal}</span></div>
+      <div style="display:flex;align-items:center;gap:8px">${escudoHtml(p.escudoLocal, col.band, p.equipoLocal)}<span class="small">${p.equipoLocal}</span></div>
       <span class="tag ${ev==='en_juego'?'mono':''}" style="background:${ev==='en_juego'?'var(--red-bg)':'var(--paper)'};color:${ev==='en_juego'?'var(--red)':'var(--muted)'}">${ev==='en_juego'?'● ':''}${estadoTag[0]}</span>
-      <div style="display:flex;align-items:center;gap:8px"><span class="small">${p.equipoVisitante}</span><div class="avatar" style="background:${col.dark}">${initials(p.equipoVisitante)}</div></div>
+      <div style="display:flex;align-items:center;gap:8px"><span class="small">${p.equipoVisitante}</span>${escudoHtml(p.escudoVisitante, col.dark, p.equipoVisitante)}</div>
     </div>
     <p class="mono" style="text-align:center;font-size:22px;margin:10px 0">${ ev==='pendiente' ? horaTxt : (marcador.local+' — '+marcador.visitante) }</p>`;
 
@@ -581,7 +595,7 @@ function renderCompletarPerfil(){
 
 const TERMINOS_TXT = `Estos son los términos y condiciones de uso de QuinKong (contenido de referencia para el MVP).
 
-1. QuinKong es una plataforma de quinielas por sala: cada sala agrupa los partidos de una liga en un día determinado, con una cuota de entrada fija de $50 MXN que cubre todos los partidos de esa sala.
+1. QuinKong es una plataforma de quinielas por sala: cada sala agrupa los partidos de una liga en un día determinado. Cada liga y día tiene tres salas con distinta cuota de entrada ($50, $100 o $200 MXN), cada una cubriendo todos los partidos de esa sala — no se cobra por partido.
 2. La casa retiene un 16% de comisión sobre lo recaudado en cada sala; el resto forma el fondo de premios.
 3. Los pronósticos quedan congelados de forma inmutable al iniciar cada partido y no pueden modificarse después.
 4. Debes ser mayor de edad (18+) para registrarte y participar.
@@ -613,13 +627,13 @@ function renderAdmin(){
   let html = `<div class="section-title">comisión de la casa</div>
   <div class="card"><div class="row"><span class="small">acumulado total</span><span class="mono" style="font-size:20px">${money(totalComision)}</span></div></div>`;
 
-  html += `<div class="section-title">crear sala</div>
+  html += `<div class="section-title">crear salas de hoy</div>
   <div class="card">
     <div class="field"><label>liga</label>
       <select id="admin-liga">${ligas.map(l=>`<option value="${l}">${l}</option>`).join('')}</select>
     </div>
-    <p class="small muted" style="margin:-4px 0 10px">cuota de entrada: $50 fijos para todas las salas.</p>
-    <button class="btn btn-primary btn-block" data-action="admin_crear_sala">crear sala</button>
+    <p class="small muted" style="margin:-4px 0 10px">se crean las 3 salas de esta liga para hoy: $50, $100 y $200 — mismas reglas, mismos partidos, solo cambia lo que se apuesta.</p>
+    <button class="btn btn-primary btn-block" data-action="admin_crear_sala">crear las 3 salas</button>
   </div>`;
 
   html += `<div class="section-title">salas abiertas / en curso</div>`;
@@ -629,7 +643,7 @@ function renderAdmin(){
     const partidos = DB.partidos.filter(p=>p.salaId===s.id);
     const comisionSala = DB.comisiones.filter(c=>c.salaId===s.id).reduce((a,c)=>a+c.monto,0);
     html += `<div class="card">
-      <div class="row"><span class="tag" style="background:var(--paper)">${s.liga}</span><span class="small muted">${s.estado}</span></div>
+      <div class="row"><span class="tag" style="background:var(--paper)">${s.liga} · ${money(s.cuotaEntrada)}</span><span class="small muted">${s.estado}</span></div>
       <p class="small muted" style="margin:8px 0">${partidos.length} partidos · comisión generada aquí: ${money(comisionSala)}</p>`;
 
     partidos.forEach(p=>{
@@ -649,12 +663,25 @@ function renderAdmin(){
     });
 
     html += `<div style="border-top:1px solid var(--line);padding-top:10px;margin-top:6px">
-      <p class="small muted" style="margin:0 0 6px">agregar partido a esta sala</p>
+      <p class="small muted" style="margin:0 0 6px">agregar partido (se replica en las 3 cuotas de esta liga/día)</p>
       <div class="field"><input id="np-local-${s.id}" placeholder="equipo local"></div>
       <div class="field"><input id="np-visit-${s.id}" placeholder="equipo visitante"></div>
       <div class="field"><input id="np-hora-${s.id}" type="datetime-local"></div>
       <button class="btn btn-secondary btn-block" data-action="admin_agregar_partido" data-sala="${s.id}">agregar partido</button>
     </div>
+    </div>`;
+  });
+
+  const reportesPendientes = DB.reportes.filter(r=>!r.resuelto);
+  html += `<div class="section-title">reportes (${reportesPendientes.length} pendientes)</div>`;
+  if (DB.reportes.length===0) html += `<div class="card"><p class="small muted" style="margin:0">Sin reportes todavía.</p></div>`;
+  DB.reportes.forEach(r=>{
+    const autor = DB.usuarios.find(u=>u.id===r.usuarioId);
+    html += `<div class="card" style="${r.resuelto?'opacity:.55':''}">
+      <div class="row"><span class="small" style="font-weight:600">${autor?autor.nombre:'usuario'}</span><span class="small muted">${fmtFecha(r.fecha)}</span></div>
+      <p class="small muted" style="margin:4px 0">${r.contexto||''}</p>
+      <p class="small" style="margin:0 0 8px">${r.mensaje}</p>
+      ${r.resuelto ? '<span class="small muted">resuelto</span>' : `<button class="btn btn-secondary" data-action="admin_resolver_reporte" data-reporte="${r.id}">marcar resuelto</button>`}
     </div>`;
   });
 
@@ -702,7 +729,7 @@ function renderHistorial(){
   cerradas.forEach(s=>{
     const col = LIGA_COLORS[s.liga] || LIGA_COLORS['Mundial FIFA 2026'];
     const participantes = DB.inscripciones.filter(i=>i.salaId===s.id).length;
-    const bolsa = calcularBolsa(participantes, s.rolloverAnterior);
+    const bolsa = calcularBolsa(participantes, s.cuotaEntrada, s.rolloverAnterior);
     html += `<div class="card">
       <div class="row"><span class="tag" style="background:${col.bg};color:${col.text}">${s.liga}</span><span class="small muted">${s.fechaResolucion? fmtFecha(s.fechaResolucion):''}</span></div>`;
     if (s.estado==='sin_ganador'){
@@ -806,13 +833,34 @@ async function handleAction(action, el){
   if (action==='ir'){ location.hash = ds.route; return; }
   if (action==='ver_sala'){ location.hash = '#/sala/'+ds.sala; return; }
   if (action==='cerrar_modal'){ closeModal(); return; }
-  if (action==='reportar'){ toast('Gracias, reportamos esto al equipo (simulado).'); return; }
+  if (action==='reportar'){
+    showModal(`<h3>reportar un problema</h3>
+      <p class="small muted" style="margin:10px 0">Cuéntanos qué está pasando — lo revisa el equipo.</p>
+      <div class="field"><textarea id="modal-reporte-msg" rows="4" style="width:100%;font-family:'Outfit',sans-serif;border:1px solid var(--line);border-radius:var(--radius-ctrl);padding:9px 11px;font-size:14px" placeholder="Describe el problema..."></textarea></div>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
+        <button class="btn btn-primary btn-block" data-action="confirmar_reporte" data-contexto="${(location.hash||'').replace(/"/g,'')}">enviar</button>
+      </div>`);
+    return;
+  }
+  if (action==='confirmar_reporte'){
+    const mensaje = document.getElementById('modal-reporte-msg').value.trim();
+    if (!mensaje){ toast('Escribe qué está pasando antes de enviar.'); return; }
+    const u = usuarioActual();
+    if (!u){ closeModal(); return; }
+    const { error } = await sb.from('reportes').insert({ usuario_id: u.id, contexto: ds.contexto || null, mensaje });
+    closeModal();
+    if (error){ toast(error.message); return; }
+    toast('Reporte enviado — gracias por avisarnos.');
+    return;
+  }
 
   /* ---- unirse a sala ---- */
   if (action==='unirse_sala'){
     const salaId = ds.sala;
+    const salaRef = DB.salas.find(s=>s.id===salaId);
     showModal(`<h3>unirte a la sala</h3>
-      <p class="small muted" style="margin-top:8px">¿Confirmas unirte por <strong style="color:var(--ink)">$50</strong>? Esta cuota cubre todos los partidos del día de esta sala — no se cobra por partido.</p>
+      <p class="small muted" style="margin-top:8px">¿Confirmas unirte por <strong style="color:var(--ink)">${money(salaRef?salaRef.cuotaEntrada:0)}</strong>? Esta cuota cubre todos los partidos del día de esta sala — no se cobra por partido.</p>
       <div class="row" style="gap:8px;margin-top:16px">
         <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
         <button class="btn btn-primary btn-block" data-action="confirmar_union" data-sala="${salaId}">confirmar y pagar</button>
@@ -991,7 +1039,7 @@ async function handleAction(action, el){
     const res = await llamarAdminApi('agregar_partido', { sala_id:salaId, equipo_local, equipo_visitante, hora_inicio:new Date(horaStr).toISOString() });
     if (res.error){ toast(res.error); return; }
     await recargarYRenderizar();
-    toast('Partido agregado.');
+    toast('Partido agregado a las 3 salas de esta liga.');
     return;
   }
   if (action==='admin_capturar_resultado'){
@@ -1002,7 +1050,14 @@ async function handleAction(action, el){
     const res = await llamarAdminApi('capturar_resultado', { partido_id:partidoId, local:rl, visitante:rv });
     if (res.error){ toast(res.error); return; }
     await recargarYRenderizar();
-    toast('Resultado capturado — el motor resolvió la jornada si correspondía.');
+    toast('Resultado capturado en las 3 salas — se resolvió cada una si correspondía.');
+    return;
+  }
+  if (action==='admin_resolver_reporte'){
+    const { error } = await sb.from('reportes').update({ resuelto:true }).eq('id', ds.reporte);
+    if (error){ toast(error.message); return; }
+    await recargarYRenderizar();
+    toast('Reporte marcado como resuelto.');
     return;
   }
 
