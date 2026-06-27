@@ -117,11 +117,20 @@ function avatarColor(seedStr){
   return AVATAR_COLORS[Math.abs(h)];
 }
 function initials(nombre){ return nombre.split(' ').map(p=>p[0]).slice(0,2).join('').toUpperCase(); }
+function recortarEscudoEspn(url){
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (!u.hostname.endsWith('espncdn.com')) return url;
+    return `https://a.espncdn.com/combiner/i?img=${encodeURIComponent(u.pathname)}&scale=crop&cquality=90&location=origin&w=100&h=100`;
+  } catch(_e){ return url; }
+}
 function escudoHtml(url, bgFallback, nombre){
   const ini = initials(nombre);
-  if (!url) return `<div class="avatar" style="background:${bgFallback}">${ini}</div>`;
+  const urlRecortada = recortarEscudoEspn(url);
+  if (!urlRecortada) return `<div class="avatar" style="background:${bgFallback}">${ini}</div>`;
   return `<span style="position:relative;display:inline-block;width:28px;height:28px;flex-shrink:0">
-    <img src="${url}" alt="${nombre}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:#fff;border:1px solid var(--line)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <img src="${urlRecortada}" alt="${nombre}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:#fff;border:1px solid var(--line)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
     <div class="avatar" style="background:${bgFallback};display:none;position:absolute;top:0;left:0">${ini}</div>
   </span>`;
 }
