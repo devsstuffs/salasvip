@@ -129,9 +129,9 @@ function escudoHtml(url, bgFallback, nombre){
   const ini = initials(nombre);
   const urlRecortada = recortarEscudoEspn(url);
   if (!urlRecortada) return `<div class="avatar" style="background:${bgFallback}">${ini}</div>`;
-  return `<span style="position:relative;display:inline-block;width:28px;height:28px;flex-shrink:0">
-    <img src="${urlRecortada}" alt="${nombre}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:#fff;border:1px solid var(--line)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-    <div class="avatar" style="background:${bgFallback};display:none;position:absolute;top:0;left:0">${ini}</div>
+  return `<span style="position:relative;display:inline-block;width:28px;height:28px;flex-shrink:0;border-radius:50%;overflow:hidden;background:#fff;border:1px solid var(--line)">
+    <img src="${urlRecortada}" alt="${nombre}" style="position:absolute;top:50%;left:50%;width:180%;height:180%;transform:translate(-50%,-50%);object-fit:cover" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="avatar" style="background:${bgFallback};display:none;position:absolute;top:0;left:0;width:100%;height:100%;border-radius:0">${ini}</div>
   </span>`;
 }
 function money(n){ return '$' + Math.round(n).toLocaleString('es-MX'); }
