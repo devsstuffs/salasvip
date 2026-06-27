@@ -6,7 +6,7 @@
 <title>QuinKong</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Outfit:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Nunito:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <style>
   :root{
@@ -25,16 +25,16 @@
     --radius-card:16px; --radius-ctrl:10px;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:'Outfit',sans-serif;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:'Nunito',sans-serif;-webkit-font-smoothing:antialiased}
   body{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;padding-bottom:74px}
-  h1,h2,h3{font-family:'Space Grotesk',sans-serif;font-weight:600;margin:0}
+  h1,h2,h3{font-family:'Baloo 2',sans-serif;font-weight:600;margin:0}
   .mono{font-family:'Space Mono',monospace}
-  button{font-family:'Outfit',sans-serif;cursor:pointer}
+  button{font-family:'Nunito',sans-serif;cursor:pointer}
   a{color:inherit;text-decoration:none}
   #app{flex:1;padding:0 16px 24px}
   /* topbar */
   .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 6px}
-  .brand{display:flex;align-items:center;gap:8px;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;letter-spacing:-0.3px}
+  .brand{display:flex;align-items:center;gap:8px;font-family:'Baloo 2',sans-serif;font-weight:700;font-size:18px;letter-spacing:-0.3px}
   .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--teal)}
   .iconbtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--muted)}
   /* generic card */
@@ -49,7 +49,7 @@
   .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted)}
   .btn-block{width:100%}
   .btn-danger{background:var(--red);color:#fff}
-  input,select{font-family:'Outfit',sans-serif;border:1px solid var(--line);border-radius:var(--radius-ctrl);padding:9px 11px;font-size:14px;background:#fff;color:var(--ink);width:100%}
+  input,select{font-family:'Nunito',sans-serif;border:1px solid var(--line);border-radius:var(--radius-ctrl);padding:9px 11px;font-size:14px;background:#fff;color:var(--ink);width:100%}
   input.num{font-family:'Space Mono',monospace;text-align:center}
   label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
   .field{margin-bottom:12px}
@@ -121,7 +121,7 @@ function escudoHtml(url, bgFallback, nombre){
   const ini = initials(nombre);
   if (!url) return `<div class="avatar" style="background:${bgFallback}">${ini}</div>`;
   return `<span style="position:relative;display:inline-block;width:28px;height:28px;flex-shrink:0">
-    <img src="${url}" alt="${nombre}" style="width:28px;height:28px;border-radius:50%;object-fit:contain;background:#fff;border:1px solid var(--line)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <img src="${url}" alt="${nombre}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;background:#fff;border:1px solid var(--line)" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
     <div class="avatar" style="background:${bgFallback};display:none;position:absolute;top:0;left:0">${ini}</div>
   </span>`;
 }
@@ -199,7 +199,7 @@ function mapPerfil(r){ return { id:r.id, nombre:r.nombre, usuario:r.usuario, fec
    --------------------------------------------------------- */
 let DB = {
   usuarios:[], salas:[], partidos:[], inscripciones:[], pronosticos:[], transacciones:[], comisiones:[], reportes:[],
-  sesionUsuarioId:null, miWallet:{ saldo:0, limiteDeposito:2000, autoexcluido:false },
+  sesionUsuarioId:null, miWallet:{ saldoDepositado:0, saldoGanancias:0, limiteDeposito:2000, autoexcluido:false },
 };
 
 function yaInicio(partido){ return partido.horaInicio <= Date.now(); }
@@ -236,9 +236,9 @@ async function cargarTodo(){
   if (DB.sesionUsuarioId){
     const { data: walletRow } = await sb.from('wallets').select('*').eq('usuario_id', DB.sesionUsuarioId).maybeSingle();
     if (walletRow){
-      DB.miWallet = { saldo:walletRow.saldo, limiteDeposito:walletRow.limite_deposito, autoexcluido:walletRow.autoexcluido };
+      DB.miWallet = { saldoDepositado:walletRow.saldo_depositado, saldoGanancias:walletRow.saldo_ganancias, limiteDeposito:walletRow.limite_deposito, autoexcluido:walletRow.autoexcluido };
       const yo = DB.usuarios.find(u=>u.id===DB.sesionUsuarioId);
-      if (yo) yo.saldo = walletRow.saldo;
+      if (yo) yo.saldo = walletRow.saldo_depositado + walletRow.saldo_ganancias;
     }
   }
 }
@@ -751,16 +751,31 @@ function renderHistorial(){
    --------------------------------------------------------- */
 function renderWallet(){
   const u = usuarioActual();
+  const w = DB.miWallet;
+  const total = w.saldoDepositado + w.saldoGanancias;
   const txs = DB.transacciones.filter(t=>t.usuarioId===u.id).sort((a,b)=>b.fecha-a.fecha).slice(0,20);
   const tipoLabel = { entrada:'entrada a sala', premio:'premio ganado', deposito:'depósito', retiro:'retiro' };
   let html = `<div class="liga-band" style="background:var(--teal)">
     <p class="liga-pot-label">tu saldo</p>
-    <p class="liga-pot">${money(u.saldo)}</p>
+    <p class="liga-pot">${money(total)}</p>
   </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="row">
+      <div><p class="small" style="margin:0">depositado</p><p class="small muted" style="margin:0">solo para jugar</p></div>
+      <span class="mono" style="font-size:16px">${money(w.saldoDepositado)}</span>
+    </div>
+    <div class="row" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+      <div><p class="small" style="margin:0">ganancias</p><p class="small muted" style="margin:0">para jugar o retirar</p></div>
+      <span class="mono" style="font-size:16px;color:var(--teal)">${money(w.saldoGanancias)}</span>
+    </div>
+  </div>
+
   <div class="row" style="gap:10px;margin-top:14px">
     <button class="btn btn-primary btn-block" data-action="depositar"><i class="ti ti-plus" aria-hidden="true"></i>depositar</button>
     <button class="btn btn-secondary btn-block" data-action="retirar"><i class="ti ti-arrow-up-right" aria-hidden="true"></i>retirar</button>
   </div>
+  <p class="small muted" style="margin:8px 0 0;text-align:center">solo puedes retirar de tus ganancias (${money(w.saldoGanancias)} disponibles) — lo depositado es exclusivamente para jugar.</p>
 
   <div class="section-title">juego responsable</div>
   <div class="card">
@@ -836,7 +851,7 @@ async function handleAction(action, el){
   if (action==='reportar'){
     showModal(`<h3>reportar un problema</h3>
       <p class="small muted" style="margin:10px 0">Cuéntanos qué está pasando — lo revisa el equipo.</p>
-      <div class="field"><textarea id="modal-reporte-msg" rows="4" style="width:100%;font-family:'Outfit',sans-serif;border:1px solid var(--line);border-radius:var(--radius-ctrl);padding:9px 11px;font-size:14px" placeholder="Describe el problema..."></textarea></div>
+      <div class="field"><textarea id="modal-reporte-msg" rows="4" style="width:100%;font-family:'Nunito',sans-serif;border:1px solid var(--line);border-radius:var(--radius-ctrl);padding:9px 11px;font-size:14px" placeholder="Describe el problema..."></textarea></div>
       <div class="row" style="gap:8px;margin-top:10px">
         <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
         <button class="btn btn-primary btn-block" data-action="confirmar_reporte" data-contexto="${(location.hash||'').replace(/"/g,'')}">enviar</button>
@@ -928,6 +943,7 @@ async function handleAction(action, el){
   if (action==='retirar'){
     showModal(`<h3>retirar</h3>
       <div class="field" style="margin-top:12px"><label>monto</label><input type="number" min="1" id="modal-monto" placeholder="$"></div>
+      <p class="small muted">disponible para retirar (solo ganancias): ${money(DB.miWallet.saldoGanancias)}</p>
       <div class="row" style="gap:8px;margin-top:10px">
         <button class="btn btn-secondary btn-block" data-action="cerrar_modal">cancelar</button>
         <button class="btn btn-primary btn-block" data-action="confirmar_retiro">retirar</button>
